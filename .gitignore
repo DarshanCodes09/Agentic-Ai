@@ -1,0 +1,56 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Test database artifact
+*.db
+test.db
+
+# Environment / secrets
+.env
+backend/.env
+*.env
+!*.env.example
+
+# Alembic
+# Keep alembic/versions/ tracked, so do NOT gitignore it
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Test artifacts
+.coverage
+htmlcov/
+coverage.xml
+
+# Node (future frontend)
+node_modules/
+.next/
+dist/
+build/
