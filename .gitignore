@@ -21,6 +21,10 @@ env/
 *.db
 test.db
 
+# User uploads
+uploads/
+backend/uploads/
+
 # Environment / secrets
 .env
 backend/.env

@@ -68,6 +68,46 @@ class InsufficientPermissionsError(AppException):
 
 
 # ---------------------------------------------------------------------------
+# Phase 2 domain exceptions
+# ---------------------------------------------------------------------------
+
+class ResourceNotFoundError(AppException):
+    """Generic 404 with a custom message (e.g. 'Subject not found.')."""
+    def __init__(self, detail: str = "Resource not found.") -> None:
+        super().__init__(detail=detail, status_code=status.HTTP_404_NOT_FOUND)
+
+
+class DuplicateResourceError(AppException):
+    """Generic 409 for duplicate-key / unique-constraint violations."""
+    def __init__(self, detail: str = "Resource already exists.") -> None:
+        super().__init__(detail=detail, status_code=status.HTTP_409_CONFLICT)
+
+
+class NotEnrolledError(AppException):
+    def __init__(self) -> None:
+        super().__init__(
+            detail="You are not enrolled in this subject.",
+            status_code=status.HTTP_403_FORBIDDEN,
+        )
+
+
+class InvalidFileTypeError(AppException):
+    def __init__(self) -> None:
+        super().__init__(
+            detail="Invalid file type. Only PDF and DOCX files are accepted.",
+            status_code=getattr(status, "HTTP_422_UNPROCESSABLE_CONTENT", 422),
+        )
+
+
+class FileTooLargeError(AppException):
+    def __init__(self, max_mb: int = 20) -> None:
+        super().__init__(
+            detail=f"File exceeds the maximum allowed size of {max_mb} MB.",
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+        )
+
+
+# ---------------------------------------------------------------------------
 # FastAPI exception handlers
 # ---------------------------------------------------------------------------
 

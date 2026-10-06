@@ -1,0 +1,155 @@
+"""
+Subject & Enrollment API routes.
+"""
+
+from fastapi import APIRouter, Depends, status
+from sqlalchemy.orm import Session
+
+from app.api.dependencies import get_current_user, require_faculty, require_student
+from app.core.exceptions import InsufficientPermissionsError, NotEnrolledError
+from app.database.session import get_db
+from app.models.user import User, UserRole
+from app.schemas.assignment import AssignmentCreate, AssignmentResponse
+from app.schemas.enrollment import EnrollmentResponse
+from app.schemas.subject import SubjectCreate, SubjectResponse, SubjectUpdate
+from app.services import assignment_service, enrollment_service, subject_service
+
+router = APIRouter(prefix="/api/subjects", tags=["Subjects"])
+
+
+@router.post(
+    "",
+    response_model=SubjectResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a new subject (Faculty only)",
+)
+def create_subject(
+    payload: SubjectCreate,
+    current_user: User = Depends(require_faculty),
+    db: Session = Depends(get_db),
+) -> SubjectResponse:
+    return subject_service.create_subject(db, payload, current_user)
+
+
+@router.get(
+    "",
+    response_model=list[SubjectResponse],
+    summary="List subjects (Faculty: own subjects; Students: all available)",
+)
+def list_subjects(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[SubjectResponse]:
+    if current_user.role == UserRole.FACULTY:
+        return subject_service.list_faculty_subjects(db, current_user.id)
+    return subject_service.list_all_subjects(db)
+
+
+@router.get(
+    "/{subject_id}",
+    response_model=SubjectResponse,
+    summary="Get subject by ID (Faculty own / Student enrolled)",
+)
+def get_subject(
+    subject_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> SubjectResponse:
+    subject = subject_service.get_subject_by_id(db, subject_id)
+    if current_user.role == UserRole.FACULTY:
+        if subject.faculty_id != current_user.id:
+            raise InsufficientPermissionsError()
+    else:
+        if not enrollment_service.is_student_enrolled(db, current_user.id, subject_id):
+            raise NotEnrolledError()
+    return subject
+
+
+@router.put(
+    "/{subject_id}",
+    response_model=SubjectResponse,
+    summary="Update subject (Faculty owner only)",
+)
+def update_subject(
+    subject_id: int,
+    payload: SubjectUpdate,
+    current_user: User = Depends(require_faculty),
+    db: Session = Depends(get_db),
+) -> SubjectResponse:
+    return subject_service.update_subject(db, subject_id, payload, current_user)
+
+
+@router.delete(
+    "/{subject_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete subject (Faculty owner only)",
+)
+def delete_subject(
+    subject_id: int,
+    current_user: User = Depends(require_faculty),
+    db: Session = Depends(get_db),
+) -> None:
+    subject_service.delete_subject(db, subject_id, current_user)
+
+
+# ---------------------------------------------------------------------------
+# Enrollment Endpoints
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/{subject_id}/enroll",
+    response_model=EnrollmentResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Enroll in a subject (Students only)",
+)
+def enroll_in_subject(
+    subject_id: int,
+    current_user: User = Depends(require_student),
+    db: Session = Depends(get_db),
+) -> EnrollmentResponse:
+    return enrollment_service.enroll_student(db, subject_id, current_user)
+
+
+@router.get(
+    "/{subject_id}/students",
+    response_model=list[EnrollmentResponse],
+    summary="List enrolled students (Faculty owner only)",
+)
+def get_enrolled_students(
+    subject_id: int,
+    current_user: User = Depends(require_faculty),
+    db: Session = Depends(get_db),
+) -> list[EnrollmentResponse]:
+    return enrollment_service.get_subject_students(db, subject_id, current_user)
+
+
+# ---------------------------------------------------------------------------
+# Subject Assignments
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/{subject_id}/assignments",
+    response_model=AssignmentResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create assignment for subject (Faculty owner only)",
+)
+def create_subject_assignment(
+    subject_id: int,
+    payload: AssignmentCreate,
+    current_user: User = Depends(require_faculty),
+    db: Session = Depends(get_db),
+) -> AssignmentResponse:
+    return assignment_service.create_assignment(db, subject_id, payload, current_user)
+
+
+@router.get(
+    "/{subject_id}/assignments",
+    response_model=list[AssignmentResponse],
+    summary="List assignments for subject (Faculty owner or enrolled student)",
+)
+def list_subject_assignments(
+    subject_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[AssignmentResponse]:
+    return assignment_service.list_subject_assignments(db, subject_id, current_user)
