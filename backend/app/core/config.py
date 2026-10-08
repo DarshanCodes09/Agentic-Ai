@@ -35,6 +35,13 @@ class Settings(BaseSettings):
     chunk_overlap: int = 50
     retrieval_top_k: int = 4
 
+    # LLM & AI Assessment (Phase 4)
+    llm_provider: str = "mock"  # "mock", "openai", "gemini"
+    llm_api_key: str | None = None
+    llm_model: str = "gpt-4o-mini"
+    llm_temperature: float = 0.0
+    llm_timeout: int = 30
+
     model_config = SettingsConfigDict(
         # pydantic-settings tries each file left-to-right; first match wins per key.
         env_file=(".env", ".env.test"),

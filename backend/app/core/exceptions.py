@@ -60,11 +60,12 @@ class InvalidTokenError(AppException):
 
 
 class InsufficientPermissionsError(AppException):
-    def __init__(self) -> None:
+    def __init__(self, detail: str = "You do not have permission to access this resource.") -> None:
         super().__init__(
-            detail="You do not have permission to access this resource.",
+            detail=detail,
             status_code=status.HTTP_403_FORBIDDEN,
         )
+
 
 
 # ---------------------------------------------------------------------------

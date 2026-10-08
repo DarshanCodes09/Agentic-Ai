@@ -82,6 +82,13 @@ class Submission(Base):
         "User",
         foreign_keys=[student_id],
     )
+    assessment: Mapped["AssessmentResult | None"] = relationship(  # type: ignore[name-defined]  # noqa: F821
+        "AssessmentResult",
+        back_populates="submission",
+        uselist=False,
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         return f"<Submission id={self.id} assignment_id={self.assignment_id} student_id={self.student_id} status={self.status}>"
+
