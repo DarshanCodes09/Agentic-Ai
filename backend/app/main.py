@@ -16,14 +16,17 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import assessments as assessments_router
 from app.api import assignments as assignments_router
 from app.api import auth as auth_router
+from app.api import faculty_analytics as faculty_analytics_router
 from app.api import materials as materials_router
 from app.api import protected as protected_router
 from app.api import questions as questions_router
 from app.api import rubrics as rubrics_router
+from app.api import student_analytics as student_analytics_router
 from app.api import subjects as subjects_router
 from app.api import submissions as submissions_router
 from app.core.config import get_settings
 from app.core.exceptions import register_exception_handlers
+
 
 
 
@@ -82,6 +85,9 @@ def create_app() -> FastAPI:
     app.include_router(rubrics_router.router)
     app.include_router(submissions_router.router)
     app.include_router(assessments_router.router)
+    app.include_router(student_analytics_router.router)
+    app.include_router(faculty_analytics_router.router)
+
 
 
     # ---------------------------------------------------------------------------

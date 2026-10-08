@@ -32,6 +32,17 @@ from app.schemas.rubric import (
     RubricResponse,
     RubricUpdate,
 )
+from app.schemas.analytics import (
+    AssignmentAnalyticsResponse,
+    ClassConceptAnalyticsResponse,
+    ClassLearningGapResponse,
+    ConceptMasterySummary,
+    FacultySubjectAnalyticsResponse,
+    LearningGapItem,
+    PerformanceTrendItem,
+    StudentOverallAnalyticsResponse,
+    SubjectPerformanceResponse,
+)
 from app.schemas.assessment import (
     AssessmentApprovalRequest,
     AssessmentFeedbackResponse,
@@ -45,6 +56,7 @@ from app.schemas.assessment import (
     FeedbackStructuredOutput,
 )
 from app.schemas.submission import SubmissionCreate, SubmissionResponse
+
 from app.schemas.subject import (
     SubjectCreate,
     SubjectResponse,
@@ -91,5 +103,15 @@ __all__ = [
     "AssessmentModificationRequest",
     "AssessmentFeedbackResponse",
     "AssessmentResponse",
+    "ConceptMasterySummary",
+    "LearningGapItem",
+    "PerformanceTrendItem",
+    "SubjectPerformanceResponse",
+    "StudentOverallAnalyticsResponse",
+    "FacultySubjectAnalyticsResponse",
+    "AssignmentAnalyticsResponse",
+    "ClassConceptAnalyticsResponse",
+    "ClassLearningGapResponse",
 ]
+
 
