@@ -25,6 +25,10 @@ test.db
 uploads/
 backend/uploads/
 
+# Vector database (ChromaDB)
+chroma_db/
+backend/chroma_db/
+
 # Environment / secrets
 .env
 backend/.env

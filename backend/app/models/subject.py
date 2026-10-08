@@ -68,6 +68,11 @@ class Subject(Base):
         back_populates="subject",
         cascade="all, delete-orphan",
     )
+    materials: Mapped[list["CourseMaterial"]] = relationship(  # type: ignore[name-defined]  # noqa: F821
+        "CourseMaterial",
+        back_populates="subject",
+        cascade="all, delete-orphan",
+    )
 
     def __repr__(self) -> str:
         return f"<Subject id={self.id} code={self.code!r}>"

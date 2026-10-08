@@ -26,6 +26,15 @@ class Settings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 30
 
+    # Document Processing & RAG (Phase 3)
+    chroma_persist_dir: str = "./chroma_db"
+    embedding_provider: str = "default"  # "default", "mock", "openai", etc.
+    embedding_model: str = "all-MiniLM-L6-v2"
+    embedding_api_key: str | None = None
+    chunk_size: int = 500
+    chunk_overlap: int = 50
+    retrieval_top_k: int = 4
+
     model_config = SettingsConfigDict(
         # pydantic-settings tries each file left-to-right; first match wins per key.
         env_file=(".env", ".env.test"),

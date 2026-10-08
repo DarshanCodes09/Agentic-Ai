@@ -13,6 +13,11 @@ from app.schemas.auth import (
     RegisterResponse,
     TokenResponse,
 )
+from app.schemas.course_material import (
+    ChunkSearchResult,
+    CourseMaterialResponse,
+    MaterialSearchQuery,
+)
 from app.schemas.enrollment import EnrollmentCreate, EnrollmentResponse
 from app.schemas.question import (
     QuestionCreate,
@@ -45,6 +50,9 @@ __all__ = [
     "SubjectCreate",
     "SubjectUpdate",
     "SubjectResponse",
+    "CourseMaterialResponse",
+    "MaterialSearchQuery",
+    "ChunkSearchResult",
     "EnrollmentCreate",
     "EnrollmentResponse",
     "AssignmentCreate",
