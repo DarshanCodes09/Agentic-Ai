@@ -1,8 +1,8 @@
 # AI-Driven Intelligent Academic Assessment and Performance Analytics System
 
-## Phase 1 — Backend Foundation
+## Phase 1–6 — Backend + Web Portal
 
-A FastAPI + PostgreSQL backend with JWT authentication and role-based access control (RBAC), designed as the foundation for an AI-powered academic assessment platform.
+A FastAPI + PostgreSQL backend with JWT authentication, role-based access control (RBAC), AI-assisted assessment, analytics, and a React web portal for students and faculty.
 
 ---
 
@@ -18,6 +18,11 @@ A FastAPI + PostgreSQL backend with JWT authentication and role-based access con
 | Config | pydantic-settings |
 | Runtime | Python 3.14 + Uvicorn |
 | Testing | pytest + SQLite (in-memory) |
+| Frontend | React + TypeScript + Vite |
+| Routing | React Router |
+| HTTP Client | Axios |
+| Styling | Tailwind CSS |
+| Charts | Recharts |
 
 ---
 
@@ -60,6 +65,8 @@ backend/
 ---
 
 ## Quick Start
+
+### Backend
 
 ### 1. Activate the virtual environment
 
@@ -112,6 +119,49 @@ cd backend
 python -m pytest tests/ -v
 ```
 
+### Frontend
+
+```powershell
+cd frontend
+copy .env.example .env
+npm install
+npm run dev
+```
+
+Frontend URL: http://localhost:5173
+
+The frontend expects the backend at:
+
+```
+VITE_API_BASE_URL=http://127.0.0.1:8000
+```
+
+Do not put database credentials, JWT secrets, LLM API keys, or other backend secrets in frontend environment variables.
+
+### Run Both Apps
+
+Terminal 1:
+
+```powershell
+cd backend
+.\.venv\Scripts\Activate.ps1
+uvicorn app.main:app --reload
+```
+
+Terminal 2:
+
+```powershell
+cd frontend
+npm run dev
+```
+
+### Production Frontend Build
+
+```powershell
+cd frontend
+npm run build
+```
+
 ---
 
 ## API Endpoints (Phase 1)
@@ -122,8 +172,17 @@ python -m pytest tests/ -v
 | POST | `/api/auth/register` | None | Register new user |
 | POST | `/api/auth/login` | None | Login, receive JWT |
 | GET | `/api/auth/me` | Bearer JWT | Current user profile |
-| GET | `/api/student/dashboard` | STUDENT JWT | Student-only test endpoint |
-| GET | `/api/faculty/dashboard` | FACULTY JWT | Faculty-only test endpoint |
+| GET | `/api/subjects` | Bearer JWT | Faculty owned subjects or student subject catalog |
+| POST | `/api/subjects/{subject_id}/enroll` | STUDENT JWT | Enroll in a subject |
+| GET | `/api/subjects/{subject_id}/assignments` | Bearer JWT | List subject assignments |
+| POST | `/api/assignments/{assignment_id}/submit` | STUDENT JWT | Submit text, PDF, or DOCX work |
+| GET | `/api/submissions` | STUDENT JWT | List current student's submissions |
+| GET | `/api/submissions/{submission_id}/assessment` | Bearer JWT | Retrieve assessment details |
+| POST | `/api/submissions/{submission_id}/assess` | FACULTY JWT | Trigger AI assessment |
+| POST | `/api/assessments/{assessment_id}/approve` | FACULTY JWT | Approve AI score |
+| PUT | `/api/assessments/{assessment_id}` | FACULTY JWT | Save modified final score |
+| GET | `/api/students/me/analytics` | STUDENT JWT | Student analytics overview |
+| GET | `/api/faculty/subjects/{subject_id}/analytics` | FACULTY JWT | Faculty subject analytics |
 
 ---
 
@@ -163,6 +222,50 @@ python -m pytest tests/ -v
 
 ---
 
+## Web Portal Workflows
+
+### Student Workflow
+
+1. Register or log in as `STUDENT`.
+2. Browse subjects from `/student/subjects`.
+3. Enroll in a subject and open assignments.
+4. Submit text answers, PDF files, DOCX files, or mixed submissions.
+5. Track submissions from `/student/submissions`.
+6. Open assessment results once faculty has triggered and reviewed AI assessment.
+7. Review analytics at `/student/analytics`, including subject performance, concept mastery, gaps, and trends.
+
+### Faculty Workflow
+
+1. Register or log in as `FACULTY`.
+2. Create and manage subjects from `/faculty/subjects`.
+3. Create subject assignments from `/faculty/subjects/{subjectId}/assignments`.
+4. Upload course materials from `/faculty/subjects/{subjectId}/materials`.
+5. Open assignment submissions from `/faculty/assignments/{assignmentId}/submissions`.
+6. Trigger AI assessment, inspect reasoning and feedback, then approve or modify the final score.
+7. Review class analytics, concept mastery, score distribution, and learning gaps from `/faculty/subjects/{subjectId}/analytics`.
+
+---
+
+## Frontend Architecture
+
+The React app lives in `frontend/`:
+
+```
+frontend/src/
+├── api/              # Axios client and endpoint modules
+├── components/       # Layout, reusable UI, charts, common display components
+├── context/          # AuthContext with token persistence
+├── hooks/            # Shared async data loading helper
+├── pages/            # Auth, student, and faculty pages
+├── routes/           # Protected role-based routing
+├── types/            # TypeScript models matching FastAPI schemas
+└── utils/            # Formatting helpers
+```
+
+The design system uses a neutral paper background, charcoal primary actions, subtle borders, restrained shadows, compact tables, and quiet status indicators.
+
+---
+
 ## Roadmap
 
 - **Phase 1** ✅ — Backend foundation, auth, RBAC
@@ -170,5 +273,5 @@ python -m pytest tests/ -v
 - **Phase 3** — PDF/DOCX processing, document ingestion
 - **Phase 4** — RAG + vector database (knowledge retrieval)
 - **Phase 5** — LLM evaluation, AI assessment agents
-- **Phase 6** — Personalized feedback, analytics dashboards
-- **Phase 7** — React frontend
+- **Phase 6** ✅ — Student and faculty React web portal
+- **Phase 7** — Future enhancements

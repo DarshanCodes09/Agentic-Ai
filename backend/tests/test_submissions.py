@@ -137,6 +137,24 @@ def test_student_can_view_own_submission(
     assert view_res.json()["id"] == submission_id
 
 
+def test_student_can_list_own_submissions(
+    client: TestClient, faculty_user: dict, student_user: dict
+):
+    sub_id, asg_id = create_subject_and_assignment(client, faculty_user["headers"], "SUBM_S5B")
+    client.post(f"/api/subjects/{sub_id}/enroll", headers=student_user["headers"])
+
+    submit_res = client.post(
+        f"/api/assignments/{asg_id}/submit",
+        json={"submission_text": "Listed answer"},
+        headers=student_user["headers"],
+    )
+
+    list_res = client.get("/api/submissions", headers=student_user["headers"])
+    assert list_res.status_code == 200
+    submissions = list_res.json()
+    assert [submission["id"] for submission in submissions] == [submit_res.json()["id"]]
+
+
 def test_student_cannot_view_other_student_submission(
     client: TestClient,
     faculty_user: dict,

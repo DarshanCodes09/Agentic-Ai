@@ -96,6 +96,20 @@ def list_assignment_submissions(
     return list(db.scalars(stmt).all())
 
 
+def list_student_submissions(db: Session, current_student: User) -> list[Submission]:
+    """List submissions owned by the currently authenticated student."""
+    if current_student.role != UserRole.STUDENT:
+        raise InsufficientPermissionsError()
+
+    stmt = (
+        select(Submission)
+        .options(selectinload(Submission.student))
+        .where(Submission.student_id == current_student.id)
+        .order_by(Submission.submitted_at.desc())
+    )
+    return list(db.scalars(stmt).all())
+
+
 def get_submission_by_id(
     db: Session, submission_id: int, current_user: User
 ) -> Submission:
