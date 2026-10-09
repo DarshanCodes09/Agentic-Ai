@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api import assessments as assessments_router
 from app.api import assignments as assignments_router
 from app.api import auth as auth_router
+from app.api import enrollments as enrollments_router
 from app.api import faculty_analytics as faculty_analytics_router
 from app.api import materials as materials_router
 from app.api import protected as protected_router
@@ -62,7 +63,11 @@ def create_app() -> FastAPI:
     # ---------------------------------------------------------------------------
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000", "http://localhost:5173"],  # React dev servers
+        allow_origins=[
+            "http://localhost:3000",
+            "http://localhost:5173",
+            "http://127.0.0.1:5173",
+        ],  # React dev servers
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -77,6 +82,7 @@ def create_app() -> FastAPI:
     # Routers
     # ---------------------------------------------------------------------------
     app.include_router(auth_router.router)
+    app.include_router(enrollments_router.router)
     app.include_router(protected_router.router)
     app.include_router(subjects_router.router)
     app.include_router(materials_router.router)

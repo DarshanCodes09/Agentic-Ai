@@ -40,6 +40,14 @@ export interface Subject {
   updated_at: string;
 }
 
+export interface Enrollment {
+  id: number;
+  student_id: number;
+  subject_id: number;
+  enrolled_at: string;
+  student?: UserBrief | null;
+}
+
 export interface Assignment {
   id: number;
   subject_id: number;

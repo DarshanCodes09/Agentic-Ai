@@ -128,16 +128,22 @@ def test_unauthenticated_subject_creation_rejected(client: TestClient):
 
 
 def test_list_subjects(client: TestClient, faculty_user: dict, student_user: dict):
-    client.post(
+    subject_res = client.post(
         "/api/subjects",
         json={"name": "Math 101", "code": "MATH101"},
         headers=faculty_user["headers"],
     )
+    subject_id = subject_res.json()["id"]
 
-    # Student listing
+    # Student listing is enrolled-only.
     res_student = client.get("/api/subjects", headers=student_user["headers"])
     assert res_student.status_code == 200
-    assert len(res_student.json()) >= 1
+    assert res_student.json() == []
+
+    client.post(f"/api/subjects/{subject_id}/enroll", headers=student_user["headers"])
+    res_student_enrolled = client.get("/api/subjects", headers=student_user["headers"])
+    assert res_student_enrolled.status_code == 200
+    assert [subject["id"] for subject in res_student_enrolled.json()] == [subject_id]
 
     # Faculty listing
     res_faculty = client.get("/api/subjects", headers=faculty_user["headers"])

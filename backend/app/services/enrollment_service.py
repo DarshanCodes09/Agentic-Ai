@@ -2,7 +2,7 @@
 Enrollment service: handles student enrollment and faculty viewing of enrolled students.
 """
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import (
@@ -14,6 +14,7 @@ from app.core.exceptions import (
 from app.models.enrollment import Enrollment
 from app.models.subject import Subject
 from app.models.user import User, UserRole
+from app.services.subject_service import normalize_subject_code
 
 
 def is_student_enrolled(db: Session, student_id: int, subject_id: int) -> bool:
@@ -50,6 +51,23 @@ def enroll_student(db: Session, subject_id: int, student_user: User) -> Enrollme
     db.flush()
     db.refresh(enrollment)
     return enrollment
+
+
+def enroll_student_by_course_code(
+    db: Session, course_code: str, student_user: User
+) -> Enrollment:
+    """Enroll an active student by normalized course/subject code."""
+    normalized_code = normalize_subject_code(course_code)
+    if not normalized_code:
+        raise ResourceNotFoundError("Course code is required.")
+
+    subject = db.scalar(
+        select(Subject).where(func.upper(Subject.code) == normalized_code)
+    )
+    if not subject:
+        raise ResourceNotFoundError(f"Course with code '{normalized_code}' not found.")
+
+    return enroll_student(db, subject.id, student_user)
 
 
 def get_subject_students(

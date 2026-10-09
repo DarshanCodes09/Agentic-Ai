@@ -13,6 +13,10 @@ class EnrollmentCreate(BaseModel):
     subject_id: int | None = None
 
 
+class EnrollmentJoinRequest(BaseModel):
+    course_code: str
+
+
 class EnrollmentResponse(BaseModel):
     id: int
     student_id: int

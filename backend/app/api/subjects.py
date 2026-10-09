@@ -44,7 +44,7 @@ def create_subject(
 @router.get(
     "",
     response_model=list[SubjectResponse],
-    summary="List subjects (Faculty: own subjects; Students: all available)",
+    summary="List subjects (Faculty: own subjects; Students: enrolled subjects)",
 )
 def list_subjects(
     current_user: User = Depends(get_current_user),
@@ -52,7 +52,19 @@ def list_subjects(
 ) -> list[SubjectResponse]:
     if current_user.role == UserRole.FACULTY:
         return subject_service.list_faculty_subjects(db, current_user.id)
-    return subject_service.list_all_subjects(db)
+    return subject_service.list_student_subjects(db, current_user.id)
+
+
+@router.get(
+    "/available",
+    response_model=list[SubjectResponse],
+    summary="List subjects available to join (Students only)",
+)
+def list_available_subjects(
+    current_user: User = Depends(require_student),
+    db: Session = Depends(get_db),
+) -> list[SubjectResponse]:
+    return subject_service.list_available_subjects_for_student(db, current_user.id)
 
 
 @router.get(
