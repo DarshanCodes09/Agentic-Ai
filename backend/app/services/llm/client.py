@@ -7,9 +7,11 @@ from typing import Any, TypeVar
 from pydantic import BaseModel
 
 from app.core.config import get_settings
+from app.core.exceptions import AppException
 from app.services.llm.base import BaseLLMProvider
 from app.services.llm.provider import (
     GeminiLLMProvider,
+    GroqLLMProvider,
     MockLLMProvider,
     OpenAILLMProvider,
 )
@@ -24,13 +26,32 @@ class LLMService:
     def __init__(self, provider: BaseLLMProvider | None = None) -> None:
         if provider is not None:
             self._provider = provider
-            self.provider_name = provider.__class__.__name__
+            if isinstance(provider, MockLLMProvider):
+                self.provider_name = "mock"
+            elif isinstance(provider, GroqLLMProvider):
+                self.provider_name = "groq"
+            else:
+                self.provider_name = provider.__class__.__name__.lower().replace("llmprovider", "")
         else:
             settings = get_settings()
             provider_type = (settings.llm_provider or "mock").lower()
             self.provider_name = provider_type
 
-            if provider_type == "openai":
+            if provider_type == "groq":
+                api_key = settings.groq_api_key or settings.llm_api_key
+                model = settings.groq_model or settings.llm_model or "llama-3.3-70b-versatile"
+                if not api_key:
+                    raise AppException(
+                        detail="GROQ_API_KEY is not configured. Please set GROQ_API_KEY to use the Groq provider.",
+                        status_code=500,
+                    )
+                self._provider = GroqLLMProvider(
+                    api_key=api_key,
+                    model=model,
+                    timeout=settings.llm_timeout,
+                )
+                self.provider_name = "groq"
+            elif provider_type == "openai":
                 if not settings.llm_api_key:
                     logger.warning("LLM_API_KEY is not set for OpenAI; falling back to MockLLMProvider.")
                     self._provider = MockLLMProvider()
@@ -55,6 +76,7 @@ class LLMService:
             else:
                 self._provider = MockLLMProvider()
                 self.provider_name = "mock"
+
 
     @property
     def provider(self) -> BaseLLMProvider:

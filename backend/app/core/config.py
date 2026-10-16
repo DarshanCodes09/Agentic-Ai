@@ -35,20 +35,25 @@ class Settings(BaseSettings):
     chunk_overlap: int = 50
     retrieval_top_k: int = 4
 
-    # LLM & AI Assessment (Phase 4)
-    llm_provider: str = "mock"  # "mock", "openai", "gemini"
+    # LLM & AI Assessment (Phase 4 & Phase 7)
+    llm_provider: str = "mock"  # "mock", "groq", "openai", "gemini"
     llm_api_key: str | None = None
     llm_model: str = "gpt-4o-mini"
     llm_temperature: float = 0.0
     llm_timeout: int = 30
 
+    # Groq API Integration (Phase 7)
+    groq_api_key: str | None = None
+    groq_model: str = "llama-3.3-70b-versatile"
+
     model_config = SettingsConfigDict(
-        # pydantic-settings tries each file left-to-right; first match wins per key.
+        # .env.test provides test fallbacks; runtime .env takes precedence when present.
         env_file=(".env.test", ".env"),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",
     )
+
 
 
 @lru_cache

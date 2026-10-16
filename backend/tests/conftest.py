@@ -5,13 +5,18 @@ Uses a separate test database (SQLite in-memory/file) so tests
 never touch the real PostgreSQL database.
 """
 
+import os
 import warnings
+
+# Enforce mock LLM provider for all pytest runs (guarantees no live network calls)
+os.environ["LLM_PROVIDER"] = "mock"
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
 from sqlalchemy.exc import SAWarning
 from sqlalchemy.orm import Session, sessionmaker
+
 
 import app.models  # noqa: F401 — register all models with Base.metadata
 from app.database.base import Base

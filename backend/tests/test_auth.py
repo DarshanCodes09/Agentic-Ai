@@ -161,8 +161,51 @@ class TestLogin:
         )
         assert response.status_code == 200
 
+    def test_login_faculty_success(self, client: TestClient):
+        client.post("/api/auth/register", json=FACULTY_DATA)
+        response = client.post(
+            "/api/auth/login",
+            json={"email": FACULTY_DATA["email"], "password": FACULTY_DATA["password"]},
+        )
+        assert response.status_code == 200
+        data = response.json()
+        assert "access_token" in data
+        assert data["token_type"] == "bearer"
+        assert data["role"] == "FACULTY"
+        assert data["email"] == FACULTY_DATA["email"]
+
+    def test_login_missing_fields_validation_error(self, client: TestClient):
+        response = client.post("/api/auth/login", json={})
+        assert response.status_code == 422
+
+    def test_login_malformed_email_validation_error(self, client: TestClient):
+        response = client.post(
+            "/api/auth/login",
+            json={"email": "not-an-email", "password": "Password123!"},
+        )
+        assert response.status_code == 422
+
 
 # ---------------------------------------------------------------------------
+# Configuration / Environment Precedence Regression Test
+# ---------------------------------------------------------------------------
+
+def test_config_env_file_precedence():
+    """Verify SettingsConfigDict prioritizes runtime .env over .env.test."""
+    from pydantic_settings import BaseSettings, SettingsConfigDict
+
+    class DummySettings(BaseSettings):
+        app_name: str
+        model_config = SettingsConfigDict(
+            env_file=(".env.test", ".env"),
+            extra="ignore",
+        )
+
+    # When .env exists in working directory, it must override .env.test
+    s = DummySettings()
+    assert s.app_name == "AI Academic Assessment System"
+    assert "Test" not in s.app_name
+
 # /me endpoint tests
 # ---------------------------------------------------------------------------
 

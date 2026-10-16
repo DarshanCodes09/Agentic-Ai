@@ -47,10 +47,12 @@ class AssessmentAgent:
     ) -> AssessmentStructuredOutput:
         """Ensure scores do not exceed maximum bounds and match rubric item IDs."""
         rubric_map = {item["criterion"].lower(): item for item in context.rubric_items}
+        evaluated_criteria_names = set()
 
         bounded_criteria = []
         for crit in result.criteria_scores:
-            matched_item = rubric_map.get(crit.criterion.lower())
+            crit_name_lower = crit.criterion.lower()
+            matched_item = rubric_map.get(crit_name_lower)
             item_id = matched_item["id"] if matched_item else crit.rubric_item_id
             crit_max = matched_item["max_marks"] if matched_item else crit.max_marks
 
@@ -60,17 +62,33 @@ class AssessmentAgent:
             crit.score = round(clamped_score, 2)
             crit.max_marks = float(crit_max)
             bounded_criteria.append(crit)
+            evaluated_criteria_names.add(crit_name_lower)
+
+        # Ensure all rubric criteria from context are represented
+        for item in context.rubric_items:
+            if item["criterion"].lower() not in evaluated_criteria_names:
+                from app.schemas.assessment import CriterionEvaluation
+                bounded_criteria.append(
+                    CriterionEvaluation(
+                        rubric_item_id=item["id"],
+                        criterion=item["criterion"],
+                        score=0.0,
+                        max_marks=float(item["max_marks"]),
+                        reasoning="Criterion was not directly evaluated in model response.",
+                    )
+                )
 
         # Total score validation
         if bounded_criteria:
             summed_score = sum(c.score for c in bounded_criteria)
-            final_ai_score = min(summed_score, context.total_max_marks)
+            final_ai_score = max(0.0, min(summed_score, context.total_max_marks))
         else:
             final_ai_score = max(0.0, min(result.ai_score, context.total_max_marks))
 
         result.ai_score = round(final_ai_score, 2)
         result.criteria_scores = bounded_criteria
         return result
+
 
 
 _assessment_agent_instance: AssessmentAgent | None = None

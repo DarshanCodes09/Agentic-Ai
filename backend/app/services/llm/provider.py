@@ -8,6 +8,16 @@ import re
 from typing import Any, TypeVar
 import httpx
 from pydantic import BaseModel
+from groq import (
+    APIConnectionError,
+    APIStatusError,
+    APITimeoutError,
+    AsyncGroq,
+    AuthenticationError,
+    BadRequestError,
+    GroqError,
+    RateLimitError,
+)
 
 from app.core.config import get_settings
 from app.core.exceptions import AppException
@@ -22,6 +32,7 @@ from app.services.llm.base import BaseLLMProvider
 
 logger = logging.getLogger(__name__)
 T = TypeVar("T", bound=BaseModel)
+
 
 
 class MockLLMProvider(BaseLLMProvider):
@@ -384,3 +395,182 @@ class GeminiLLMProvider(BaseLLMProvider):
             text = resp.json()["candidates"][0]["content"]["parts"][0]["text"]
             parsed = json.loads(text)
             return response_model.model_validate(parsed)
+
+
+class GroqLLMProvider(BaseLLMProvider):
+    """
+    Official Groq Python SDK provider for high-performance open-source LLM inference.
+    """
+
+    def __init__(
+        self,
+        api_key: str,
+        model: str = "llama-3.3-70b-versatile",
+        timeout: float = 30.0,
+        client: AsyncGroq | None = None,
+    ) -> None:
+        if not api_key:
+            raise AppException(
+                detail="GROQ_API_KEY is not configured. Please provide a valid Groq API key.",
+                status_code=500,
+            )
+        self.api_key = api_key
+        self.model = model or "llama-3.3-70b-versatile"
+        self.timeout = timeout
+        self.client = client or AsyncGroq(api_key=api_key, timeout=timeout)
+
+    async def generate(
+        self,
+        prompt: str,
+        system_prompt: str | None = None,
+        **kwargs: Any,
+    ) -> str:
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=kwargs.get("temperature", 0.0),
+            )
+            return response.choices[0].message.content or ""
+        except AuthenticationError as e:
+            logger.error("Groq authentication failure: invalid or expired API key.")
+            raise AppException(
+                detail="Groq authentication failed: Invalid or expired API key.",
+                status_code=502,
+            ) from e
+        except RateLimitError as e:
+            logger.warning("Groq rate limit exceeded.")
+            raise AppException(
+                detail="Groq rate limit exceeded. Please try again later.",
+                status_code=429,
+            ) from e
+        except APITimeoutError as e:
+            logger.error("Groq API request timed out.")
+            raise AppException(
+                detail="Groq request timed out. Please try again.",
+                status_code=504,
+            ) from e
+        except APIConnectionError as e:
+            logger.error("Groq network connection error.")
+            raise AppException(
+                detail="Groq network connection error. Could not reach Groq API.",
+                status_code=502,
+            ) from e
+        except BadRequestError as e:
+            logger.error("Groq bad request error: %s", getattr(e, "message", str(e)))
+            raise AppException(
+                detail="Groq API bad request error.",
+                status_code=502,
+            ) from e
+        except APIStatusError as e:
+            logger.error("Groq API status error: status_code=%s", getattr(e, "status_code", "unknown"))
+            raise AppException(
+                detail=f"Groq API error ({getattr(e, 'status_code', 502)}).",
+                status_code=502,
+            ) from e
+        except GroqError as e:
+            logger.error("Groq SDK general error.")
+            raise AppException(
+                detail="Groq API request failed.",
+                status_code=502,
+            ) from e
+
+    async def generate_structured(
+        self,
+        prompt: str,
+        response_model: type[T],
+        system_prompt: str | None = None,
+        **kwargs: Any,
+    ) -> T:
+        schema_json = json.dumps(response_model.model_json_schema())
+        system_directive = (
+            f"{system_prompt or ''}\n\n"
+            f"You MUST return ONLY valid JSON matching this schema:\n{schema_json}"
+        )
+        messages = [
+            {"role": "system", "content": system_directive},
+            {"role": "user", "content": prompt},
+        ]
+
+        try:
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                temperature=kwargs.get("temperature", 0.0),
+                response_format={"type": "json_object"},
+            )
+            raw_content = response.choices[0].message.content or "{}"
+        except AuthenticationError as e:
+            logger.error("Groq authentication failure: invalid or expired API key.")
+            raise AppException(
+                detail="Groq authentication failed: Invalid or expired API key.",
+                status_code=502,
+            ) from e
+        except RateLimitError as e:
+            logger.warning("Groq rate limit exceeded.")
+            raise AppException(
+                detail="Groq rate limit exceeded. Please try again later.",
+                status_code=429,
+            ) from e
+        except APITimeoutError as e:
+            logger.error("Groq API request timed out.")
+            raise AppException(
+                detail="Groq request timed out. Please try again.",
+                status_code=504,
+            ) from e
+        except APIConnectionError as e:
+            logger.error("Groq network connection error.")
+            raise AppException(
+                detail="Groq network connection error. Could not reach Groq API.",
+                status_code=502,
+            ) from e
+        except BadRequestError as e:
+            logger.error("Groq bad request error: %s", getattr(e, "message", str(e)))
+            raise AppException(
+                detail="Groq API bad request error.",
+                status_code=502,
+            ) from e
+        except APIStatusError as e:
+            logger.error("Groq API status error: status_code=%s", getattr(e, "status_code", "unknown"))
+            raise AppException(
+                detail=f"Groq API error ({getattr(e, 'status_code', 502)}).",
+                status_code=502,
+            ) from e
+        except Exception as e:
+            if isinstance(e, AppException):
+                raise
+            logger.error("Groq SDK general error: %s", type(e).__name__)
+            raise AppException(
+                detail="Groq API request failed.",
+                status_code=502,
+            ) from e
+
+        # Clean markdown JSON fencing if returned by model
+        content = raw_content.strip()
+        if content.startswith("```"):
+            content = re.sub(r"^```(?:json)?\s*", "", content, flags=re.IGNORECASE)
+            content = re.sub(r"\s*```$", "", content)
+
+        try:
+            parsed = json.loads(content)
+        except (json.JSONDecodeError, ValueError) as e:
+            logger.error("Groq returned malformed non-JSON content.")
+            raise AppException(
+                detail="Groq model returned malformed non-JSON output.",
+                status_code=502,
+            ) from e
+
+        try:
+            return response_model.model_validate(parsed)
+        except Exception as e:
+            logger.error("Groq output failed schema validation: %s", e)
+            raise AppException(
+                detail="Groq model output failed structured schema validation.",
+                status_code=502,
+            ) from e
+
