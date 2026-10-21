@@ -7,8 +7,10 @@ export const subjectsApi = {
   get: async (subjectId: number) => (await apiClient.get<Subject>(`/subjects/${subjectId}`)).data,
   create: async (payload: { name: string; code: string; description?: string }) =>
     (await apiClient.post<Subject>("/subjects", payload)).data,
-  update: async (subjectId: number, payload: { name?: string; description?: string }) =>
+  update: async (subjectId: number, payload: { name?: string; description?: string; is_archived?: boolean }) =>
     (await apiClient.put<Subject>(`/subjects/${subjectId}`, payload)).data,
+  archive: async (subjectId: number, archive = true) =>
+    (await apiClient.post<Subject>(`/subjects/${subjectId}/archive?archive=${archive}`)).data,
   remove: async (subjectId: number) => apiClient.delete(`/subjects/${subjectId}`),
   enroll: async (subjectId: number) => (await apiClient.post(`/subjects/${subjectId}/enroll`)).data,
   joinByCode: async (courseCode: string) =>

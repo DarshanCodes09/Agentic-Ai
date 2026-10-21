@@ -62,6 +62,20 @@ def delete_assignment(
     assignment_service.delete_assignment(db, assignment_id, current_user)
 
 
+@router.post(
+    "/{assignment_id}/archive",
+    response_model=AssignmentResponse,
+    summary="Archive or unarchive assignment (Faculty owner only)",
+)
+def archive_assignment(
+    assignment_id: int,
+    archive: bool = True,
+    current_user: User = Depends(require_faculty),
+    db: Session = Depends(get_db),
+) -> AssignmentResponse:
+    return assignment_service.archive_assignment(db, assignment_id, current_user, is_archived=archive)
+
+
 # ---------------------------------------------------------------------------
 # Questions for Assignment
 # ---------------------------------------------------------------------------

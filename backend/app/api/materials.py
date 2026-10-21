@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_current_user, require_faculty
 from app.database.session import get_db
 from app.models.user import User
-from app.schemas.course_material import CourseMaterialResponse
+from app.schemas.course_material import CourseMaterialResponse, CourseMaterialUpdate
 from app.services import course_material_service
 
 router = APIRouter(prefix="/api/materials", tags=["Course Materials"])
@@ -44,6 +44,22 @@ def get_material_file(
         inline=inline,
     )
 
+
+
+@router.put(
+    "/{material_id}",
+    response_model=CourseMaterialResponse,
+    summary="Update course material metadata (Faculty owner only)",
+)
+def update_material(
+    material_id: int,
+    payload: CourseMaterialUpdate,
+    current_user: User = Depends(require_faculty),
+    db: Session = Depends(get_db),
+) -> CourseMaterialResponse:
+    return course_material_service.update_course_material(
+        db, material_id, payload.title, current_user
+    )
 
 
 @router.delete(

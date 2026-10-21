@@ -11,6 +11,7 @@ import { Badge, statusTone } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card, CardTitle } from "../../components/ui/Card";
 import { Field, Input, Textarea } from "../../components/ui/Input";
+import { Modal } from "../../components/ui/Modal";
 import { EmptyState, ErrorState, LoadingState } from "../../components/ui/State";
 import { Table } from "../../components/ui/Table";
 import { useAsync } from "../../hooks/useAsync";
@@ -22,6 +23,8 @@ export function FacultyAssessmentReviewPage() {
   const [finalScore, setFinalScore] = useState("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
+  const [reassessModalOpen, setReassessModalOpen] = useState(false);
+  const [reassessLoading, setReassessLoading] = useState(false);
 
   async function trigger() {
     setError("");
@@ -30,6 +33,20 @@ export function FacultyAssessmentReviewPage() {
       assessment.refetch();
     } catch (err) {
       setError(getApiErrorMessage(err));
+    }
+  }
+
+  async function executeReassessment() {
+    setReassessLoading(true);
+    setError("");
+    try {
+      await assessmentsApi.trigger(submissionId, true);
+      setReassessModalOpen(false);
+      assessment.refetch();
+    } catch (err) {
+      setError(getApiErrorMessage(err));
+    } finally {
+      setReassessLoading(false);
     }
   }
 
@@ -70,7 +87,11 @@ export function FacultyAssessmentReviewPage() {
             <form onSubmit={modify} className="mt-4 space-y-4">
               <Field label="Final score"><Input type="number" min={0} max={data.max_score} step="0.1" value={finalScore} onChange={(e) => setFinalScore(e.target.value)} placeholder={String(data.ai_score)} /></Field>
               <Field label="Faculty notes"><Textarea value={notes} onChange={(e) => setNotes(e.target.value)} /></Field>
-              <div className="flex flex-wrap gap-2"><Button type="button" onClick={approve}>Approve AI score</Button><Button variant="secondary" type="submit">Save modified score</Button><Button variant="ghost" type="button" onClick={trigger}>Re-run assessment</Button></div>
+              <div className="flex flex-wrap gap-2">
+                <Button type="button" onClick={approve}>Approve AI score</Button>
+                <Button variant="secondary" type="submit">Save modified score</Button>
+                <Button variant="ghost" type="button" onClick={() => setReassessModalOpen(true)}>Re-run assessment</Button>
+              </div>
             </form>
           </Card>
           <Card className="lg:col-span-2">
@@ -131,6 +152,34 @@ export function FacultyAssessmentReviewPage() {
           </Card>
         </div>
       ) : <LoadingState />}
+
+      {/* Reassessment Confirmation Modal */}
+      <Modal
+        isOpen={reassessModalOpen}
+        onClose={() => setReassessModalOpen(false)}
+        title="Confirm Reassessment?"
+        description="An evaluation already exists for this submission. Re-running will recalculate scores and feedback using the AI evaluation pipeline. The result will return to COMPLETED status and require your review and approval before release to the student."
+      >
+        <div className="space-y-4">
+          {data ? (
+            <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+              <p className="font-semibold">Note on Existing Assessment</p>
+              <p className="mt-1">
+                Current evaluation (Score: {data.final_score} / {data.max_score}, status: {data.status}) will be overwritten with freshly generated AI scores.
+              </p>
+            </div>
+          ) : null}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setReassessModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button disabled={reassessLoading} onClick={executeReassessment}>
+              {reassessLoading ? "Reassessing..." : "Confirm & Re-evaluate"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </>
   );
 }

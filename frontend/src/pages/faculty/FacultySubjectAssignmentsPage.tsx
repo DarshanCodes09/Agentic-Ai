@@ -8,6 +8,7 @@ import { Badge } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
 import { Card, CardTitle } from "../../components/ui/Card";
 import { Field, Input, Textarea } from "../../components/ui/Input";
+import { Modal } from "../../components/ui/Modal";
 import { EmptyState, ErrorState, LoadingState } from "../../components/ui/State";
 import { Table } from "../../components/ui/Table";
 import { useAsync } from "../../hooks/useAsync";
@@ -51,6 +52,107 @@ export function FacultySubjectAssignmentsPage() {
 
   const [selectedAssignmentForRubric, setSelectedAssignmentForRubric] = useState<Assignment | null>(null);
   const [error, setError] = useState("");
+
+  // Edit assignment state
+  const [editingAssignment, setEditingAssignment] = useState<Assignment | null>(null);
+  const [editForm, setEditForm] = useState({
+    title: "",
+    description: "",
+    instructions: "",
+    due_date: "",
+    max_marks: 100,
+    is_archived: false,
+  });
+  const [editError, setEditError] = useState("");
+  const [editLoading, setEditLoading] = useState(false);
+
+  // Delete / Archive assignment state
+  const [actionAssignment, setActionAssignment] = useState<Assignment | null>(null);
+  const [actionType, setActionType] = useState<"delete" | "archive" | "unarchive" | null>(null);
+  const [actionError, setActionError] = useState("");
+  const [actionLoading, setActionLoading] = useState(false);
+
+  function startEditAssignment(asg: Assignment) {
+    setEditingAssignment(asg);
+    setEditForm({
+      title: asg.title,
+      description: asg.description || "",
+      instructions: asg.instructions || "",
+      due_date: asg.due_date ? new Date(asg.due_date).toISOString().slice(0, 16) : "",
+      max_marks: asg.max_marks,
+      is_archived: !!asg.is_archived,
+    });
+    setEditError("");
+  }
+
+  async function handleUpdateAssignment(event: FormEvent) {
+    event.preventDefault();
+    if (!editingAssignment) return;
+    setEditError("");
+
+    if (!editForm.title.trim()) {
+      setEditError("Assignment title cannot be empty.");
+      return;
+    }
+    if (editForm.max_marks <= 0) {
+      setEditError("Maximum marks must be greater than 0.");
+      return;
+    }
+
+    // Rubric total check
+    if (editingAssignment.rubric?.items?.length) {
+      const rubricTotal = editingAssignment.rubric.items.reduce(
+        (sum, item) => sum + (Number(item.max_marks) || 0),
+        0
+      );
+      if (editForm.max_marks < rubricTotal) {
+        setEditError(
+          `Maximum marks (${editForm.max_marks}) cannot be less than current rubric criteria total (${rubricTotal}).`
+        );
+        return;
+      }
+    }
+
+    setEditLoading(true);
+    try {
+      await assignmentsApi.update(editingAssignment.id, {
+        title: editForm.title.trim(),
+        description: editForm.description || undefined,
+        instructions: editForm.instructions || undefined,
+        due_date: editForm.due_date ? new Date(editForm.due_date).toISOString() : undefined,
+        max_marks: Number(editForm.max_marks),
+        is_archived: editForm.is_archived,
+      });
+      setEditingAssignment(null);
+      assignments.refetch();
+    } catch (err) {
+      setEditError(getApiErrorMessage(err));
+    } finally {
+      setEditLoading(false);
+    }
+  }
+
+  async function handleActionConfirm() {
+    if (!actionAssignment || !actionType) return;
+    setActionLoading(true);
+    setActionError("");
+    try {
+      if (actionType === "delete") {
+        await assignmentsApi.remove(actionAssignment.id);
+      } else if (actionType === "archive") {
+        await assignmentsApi.archive(actionAssignment.id, true);
+      } else if (actionType === "unarchive") {
+        await assignmentsApi.archive(actionAssignment.id, false);
+      }
+      setActionAssignment(null);
+      setActionType(null);
+      assignments.refetch();
+    } catch (err) {
+      setActionError(getApiErrorMessage(err));
+    } finally {
+      setActionLoading(false);
+    }
+  }
 
   const totalCriteriaMarks = criteria.reduce(
     (sum, item) => sum + (Number(item.max_marks) || 0),
@@ -341,13 +443,18 @@ export function FacultySubjectAssignmentsPage() {
                 <LoadingState />
               ) : assignments.data?.length ? (
                 <Table
-                  columns={["Title", "Marks", "Rubric", "Submissions", "Analytics"]}
+                  columns={["Title", "Marks", "Status", "Rubric", "Submissions", "Actions"]}
                   rows={assignments.data.map((item) => [
                     <div>
                       <p className="font-medium text-ink">{item.title}</p>
                       <p className="text-xs text-muted">Due: {formatDate(item.due_date)}</p>
                     </div>,
                     item.max_marks,
+                    item.is_archived ? (
+                      <Badge tone="neutral">Archived</Badge>
+                    ) : (
+                      <Badge tone="success">Active</Badge>
+                    ),
                     item.rubric ? (
                       <button
                         type="button"
@@ -368,12 +475,43 @@ export function FacultySubjectAssignmentsPage() {
                     >
                       Open
                     </Link>,
-                    <Link
-                      className="font-medium underline hover:text-ink"
-                      to={`/faculty/subjects/${subjectId}/analytics`}
-                    >
-                      View
-                    </Link>,
+                    <div className="flex items-center gap-1.5">
+                      <Link
+                        className="rounded px-2 py-1 text-xs font-medium text-ink hover:bg-stone-100"
+                        to={`/faculty/subjects/${subjectId}/analytics`}
+                      >
+                        Analytics
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => startEditAssignment(item)}
+                        className="rounded px-2 py-1 text-xs font-medium text-ink hover:bg-stone-100"
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActionAssignment(item);
+                          setActionType(item.is_archived ? "unarchive" : "archive");
+                          setActionError("");
+                        }}
+                        className="rounded px-2 py-1 text-xs font-medium text-ink hover:bg-stone-100"
+                      >
+                        {item.is_archived ? "Unarchive" : "Archive"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActionAssignment(item);
+                          setActionType("delete");
+                          setActionError("");
+                        }}
+                        className="rounded px-2 py-1 text-xs font-medium text-red-700 hover:bg-red-50"
+                      >
+                        Delete
+                      </button>
+                    </div>,
                   ])}
                 />
               ) : (
@@ -421,6 +559,141 @@ export function FacultySubjectAssignmentsPage() {
           ) : null}
         </div>
       </div>
+
+      {/* Edit Assignment Modal */}
+      <Modal
+        isOpen={!!editingAssignment}
+        onClose={() => setEditingAssignment(null)}
+        title="Edit assignment"
+        description="Update assignment details, due date, maximum marks, or archive status."
+      >
+        <form onSubmit={handleUpdateAssignment} className="space-y-4">
+          <Field label="Title">
+            <Input
+              required
+              value={editForm.title}
+              onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+            />
+          </Field>
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <Field label="Due date">
+              <Input
+                required
+                type="datetime-local"
+                value={editForm.due_date}
+                onChange={(e) => setEditForm({ ...editForm, due_date: e.target.value })}
+              />
+            </Field>
+            <Field
+              label="Maximum marks"
+              hint={
+                editingAssignment?.rubric?.items?.length
+                  ? `Min: ${editingAssignment.rubric.items.reduce((s, i) => s + Number(i.max_marks), 0)} (rubric total)`
+                  : undefined
+              }
+            >
+              <Input
+                required
+                type="number"
+                min={1}
+                value={editForm.max_marks}
+                onChange={(e) => setEditForm({ ...editForm, max_marks: Number(e.target.value) })}
+              />
+            </Field>
+          </div>
+          <Field label="Description">
+            <Textarea
+              value={editForm.description}
+              onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+            />
+          </Field>
+          <Field label="Instructions">
+            <Textarea
+              value={editForm.instructions}
+              onChange={(e) => setEditForm({ ...editForm, instructions: e.target.value })}
+            />
+          </Field>
+          <div className="flex items-center gap-2 pt-1">
+            <input
+              id="edit_asg_archived"
+              type="checkbox"
+              checked={editForm.is_archived}
+              onChange={(e) => setEditForm({ ...editForm, is_archived: e.target.checked })}
+              className="h-4 w-4 rounded border-line"
+            />
+            <label htmlFor="edit_asg_archived" className="text-sm font-medium text-ink">
+              Archive this assignment (read-only for submissions)
+            </label>
+          </div>
+          {editError ? <p className="text-sm text-red-700">{editError}</p> : null}
+          <div className="flex justify-end gap-2 pt-2">
+            <Button type="button" variant="secondary" onClick={() => setEditingAssignment(null)}>
+              Cancel
+            </Button>
+            <Button disabled={editLoading}>
+              {editLoading ? "Saving..." : "Save changes"}
+            </Button>
+          </div>
+        </form>
+      </Modal>
+
+      {/* Action / Delete Assignment Modal */}
+      <Modal
+        isOpen={!!actionAssignment && !!actionType}
+        onClose={() => {
+          setActionAssignment(null);
+          setActionType(null);
+        }}
+        title={
+          actionType === "delete"
+            ? `Delete assignment "${actionAssignment?.title}"?`
+            : actionType === "archive"
+            ? `Archive assignment "${actionAssignment?.title}"?`
+            : `Unarchive assignment "${actionAssignment?.title}"?`
+        }
+        description={
+          actionType === "delete"
+            ? "Permanent deletion is rejected if student submissions exist to protect grades, feedback, and academic records. If work was submitted, archive the assignment instead."
+            : actionType === "archive"
+            ? "Archived assignments will no longer accept new student submissions while preserving all past submissions and evaluation records."
+            : "Reactivating restores student visibility for active submissions."
+        }
+      >
+        <div className="space-y-4">
+          {actionError ? (
+            <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-800">
+              <p className="font-semibold">Action Prevented</p>
+              <p className="mt-1">{actionError}</p>
+            </div>
+          ) : null}
+
+          <div className="flex justify-end gap-2 pt-2">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                setActionAssignment(null);
+                setActionType(null);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              variant={actionType === "delete" ? "danger" : "primary"}
+              disabled={actionLoading}
+              onClick={handleActionConfirm}
+            >
+              {actionLoading
+                ? "Processing..."
+                : actionType === "delete"
+                ? "Confirm Delete"
+                : actionType === "archive"
+                ? "Confirm Archive"
+                : "Confirm Unarchive"}
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </>
   );
 }

@@ -22,6 +22,7 @@ class SubjectCreate(SubjectBase):
 class SubjectUpdate(BaseModel):
     name: str | None = Field(None, min_length=1, max_length=255)
     description: str | None = None
+    is_archived: bool | None = None
 
 
 class SubjectResponse(BaseModel):
@@ -29,6 +30,7 @@ class SubjectResponse(BaseModel):
     name: str
     code: str
     description: str | None
+    is_archived: bool = False
     faculty_id: int
     faculty: UserBrief | None = None
     created_at: datetime

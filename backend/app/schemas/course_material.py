@@ -26,6 +26,10 @@ class CourseMaterialResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class CourseMaterialUpdate(BaseModel):
+    title: str = Field(..., min_length=1, max_length=255, description="Updated course material title")
+
+
 class MaterialSearchQuery(BaseModel):
     query: str = Field(..., min_length=1, description="Search query string")
     subject_id: int | None = Field(None, description="Optional subject ID filter")

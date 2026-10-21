@@ -18,6 +18,20 @@ export const assignmentsApi = {
       };
     }
   ) => (await apiClient.post<Assignment>(`/subjects/${subjectId}/assignments`, payload)).data,
+  update: async (
+    assignmentId: number,
+    payload: {
+      title?: string;
+      description?: string;
+      instructions?: string;
+      due_date?: string;
+      max_marks?: number;
+      is_archived?: boolean;
+    }
+  ) => (await apiClient.put<Assignment>(`/assignments/${assignmentId}`, payload)).data,
+  archive: async (assignmentId: number, archive = true) =>
+    (await apiClient.post<Assignment>(`/assignments/${assignmentId}/archive?archive=${archive}`)).data,
+  remove: async (assignmentId: number) => apiClient.delete(`/assignments/${assignmentId}`),
 
   questions: async (assignmentId: number) =>
     (await apiClient.get<Question[]>(`/assignments/${assignmentId}/questions`)).data,

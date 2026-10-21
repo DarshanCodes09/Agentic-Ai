@@ -6,7 +6,7 @@ A subject is owned by a single FACULTY member. Students can enroll in subjects.
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -32,6 +32,7 @@ class Subject(Base):
         nullable=False,
     )
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Foreign key → users.id (must be a FACULTY user — enforced at service layer)
     faculty_id: Mapped[int] = mapped_column(
