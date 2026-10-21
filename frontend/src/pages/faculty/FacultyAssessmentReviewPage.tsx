@@ -2,7 +2,9 @@ import { FormEvent, useState } from "react";
 import { useParams } from "react-router-dom";
 import { assessmentsApi } from "../../api/assessments";
 import { getApiErrorMessage } from "../../api/client";
+import { downloadOrPreviewFile } from "../../api/files";
 import { submissionsApi } from "../../api/submissions";
+
 import { PageHeader } from "../../components/common/PageHeader";
 import { ScoreDisplay } from "../../components/common/ScoreDisplay";
 import { Badge, statusTone } from "../../components/ui/Badge";
@@ -74,7 +76,46 @@ export function FacultyAssessmentReviewPage() {
           <Card className="lg:col-span-2">
             <CardTitle>Submission</CardTitle>
             <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-muted">{submission.data?.submission_text ?? "File submission only."}</p>
+            {submission.data?.original_filename ? (
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-line bg-stone-50/70 p-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold uppercase text-muted">Submitted File:</span>
+                  <span className="text-sm font-medium text-ink">{submission.data.original_filename}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="text-xs"
+                    onClick={() =>
+                      downloadOrPreviewFile(
+                        `/submissions/${submissionId}/file`,
+                        submission.data?.original_filename ?? "submission.pdf",
+                        true
+                      )
+                    }
+                  >
+                    Preview File
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="text-xs"
+                    onClick={() =>
+                      downloadOrPreviewFile(
+                        `/submissions/${submissionId}/file`,
+                        submission.data?.original_filename ?? "submission.pdf",
+                        false
+                      )
+                    }
+                  >
+                    Download File
+                  </Button>
+                </div>
+              </div>
+            ) : null}
           </Card>
+
           <Card>
             <CardTitle>Reasoning and feedback</CardTitle>
             <p className="mt-3 text-sm leading-6 text-muted">{data.feedback?.summary}</p>

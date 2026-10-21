@@ -140,3 +140,32 @@ def get_submission_by_id(
         raise InsufficientPermissionsError()
 
     return submission
+
+
+def get_submission_file_response(
+    db: Session,
+    submission_id: int,
+    current_user: User,
+    inline: bool = False,
+):
+    """
+    Retrieve FileResponse for student submitted file.
+    Authorized for the student submitter or the faculty owning the assignment.
+    """
+    submission = get_submission_by_id(db, submission_id, current_user)
+
+    if not submission.file_path:
+        raise ResourceNotFoundError("No file was uploaded with this submission.")
+
+    from app.services.file_storage.security import (
+        build_secure_file_response,
+        validate_file_path_safe,
+    )
+    storage = get_file_storage_service()
+    safe_path = validate_file_path_safe(submission.file_path, storage.upload_dir)
+
+    return build_secure_file_response(
+        file_path=safe_path,
+        original_filename=submission.original_filename,
+        inline=inline,
+    )

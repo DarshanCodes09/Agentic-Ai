@@ -37,3 +37,21 @@ def get_submission(
     db: Session = Depends(get_db),
 ) -> SubmissionResponse:
     return submission_service.get_submission_by_id(db, submission_id, current_user)
+
+
+@router.get(
+    "/{submission_id}/file",
+    summary="Download or preview submitted file (Student owner or Assignment faculty only)",
+)
+def get_submission_file(
+    submission_id: int,
+    inline: bool = False,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return submission_service.get_submission_file_response(
+        db=db,
+        submission_id=submission_id,
+        current_user=current_user,
+        inline=inline,
+    )

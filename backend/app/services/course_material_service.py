@@ -249,3 +249,29 @@ def search_subject_knowledge(
         course_material_id=course_material_id,
         top_k=top_k,
     )
+
+
+def get_course_material_file_response(
+    db: Session,
+    material_id: int,
+    current_user: User,
+    inline: bool = False,
+):
+    """
+    Retrieve FileResponse for course material.
+    Authorized for the owning faculty or any student enrolled in the subject.
+    """
+    material = get_course_material(db, material_id, current_user)
+
+    from app.services.file_storage.security import (
+        build_secure_file_response,
+        validate_file_path_safe,
+    )
+    storage = get_file_storage_service()
+    safe_path = validate_file_path_safe(material.file_path, storage.materials_dir)
+
+    return build_secure_file_response(
+        file_path=safe_path,
+        original_filename=material.original_filename,
+        inline=inline,
+    )

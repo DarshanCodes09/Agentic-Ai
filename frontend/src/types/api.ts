@@ -59,7 +59,9 @@ export interface Assignment {
   created_by: number;
   created_at: string;
   updated_at: string;
+  rubric?: Rubric | null;
 }
+
 
 export interface Question {
   id: number;

@@ -6,6 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import (
+    AppException,
     DuplicateResourceError,
     InsufficientPermissionsError,
     NotEnrolledError,
@@ -44,9 +45,29 @@ def create_rubric(
     if existing:
         raise DuplicateResourceError("A rubric already exists for this assignment.")
 
+    # Validate items if present
+    if data.items:
+        seen = set()
+        total_criteria_marks = 0.0
+        for item_data in data.items:
+            norm = item_data.criterion.strip().lower()
+            if norm in seen:
+                raise DuplicateResourceError(f"Duplicate criterion '{item_data.criterion.strip()}' in rubric.")
+            seen.add(norm)
+            total_criteria_marks += float(item_data.max_marks)
+
+        if total_criteria_marks > float(assignment.max_marks):
+            raise AppException(
+                detail=(
+                    f"Total rubric criteria marks ({total_criteria_marks}) exceed assignment "
+                    f"maximum marks ({assignment.max_marks})."
+                ),
+                status_code=422,
+            )
+
     rubric = Rubric(
         assignment_id=assignment_id,
-        name=data.name,
+        name=data.name.strip(),
         description=data.description,
     )
     db.add(rubric)
@@ -56,7 +77,7 @@ def create_rubric(
         for item_data in data.items:
             item = RubricItem(
                 rubric_id=rubric.id,
-                criterion=item_data.criterion,
+                criterion=item_data.criterion.strip(),
                 description=item_data.description,
                 max_marks=item_data.max_marks,
             )
@@ -65,6 +86,7 @@ def create_rubric(
 
     db.refresh(rubric)
     return rubric
+
 
 
 def get_assignment_rubric(
@@ -133,7 +155,8 @@ def add_rubric_item(
     stmt = (
         select(Rubric)
         .options(
-            selectinload(Rubric.assignment).selectinload(Assignment.subject)
+            selectinload(Rubric.assignment).selectinload(Assignment.subject),
+            selectinload(Rubric.items),
         )
         .where(Rubric.id == rubric_id)
     )
@@ -144,9 +167,27 @@ def add_rubric_item(
     if rubric.assignment.subject.faculty_id != current_faculty.id:
         raise InsufficientPermissionsError()
 
+    # Check for duplicate criterion name in this rubric
+    c_norm = data.criterion.strip().lower()
+    for existing_item in rubric.items:
+        if existing_item.criterion.strip().lower() == c_norm:
+            raise DuplicateResourceError(f"Criterion '{data.criterion.strip()}' already exists in this rubric.")
+
+    # Check total criteria marks bound
+    current_total = sum(float(item.max_marks) for item in rubric.items)
+    new_total = current_total + float(data.max_marks)
+    if new_total > float(rubric.assignment.max_marks):
+        raise AppException(
+            detail=(
+                f"Adding criterion with {data.max_marks} marks causes total rubric marks ({new_total}) "
+                f"to exceed assignment maximum marks ({rubric.assignment.max_marks})."
+            ),
+            status_code=422,
+        )
+
     item = RubricItem(
         rubric_id=rubric_id,
-        criterion=data.criterion,
+        criterion=data.criterion.strip(),
         description=data.description,
         max_marks=data.max_marks,
     )
@@ -165,7 +206,8 @@ def update_rubric_item(
         .options(
             selectinload(RubricItem.rubric)
             .selectinload(Rubric.assignment)
-            .selectinload(Assignment.subject)
+            .selectinload(Assignment.subject),
+            selectinload(RubricItem.rubric).selectinload(Rubric.items),
         )
         .where(RubricItem.id == item_id)
     )
@@ -177,15 +219,34 @@ def update_rubric_item(
         raise InsufficientPermissionsError()
 
     if data.criterion is not None:
-        item.criterion = data.criterion
+        c_norm = data.criterion.strip().lower()
+        for other in item.rubric.items:
+            if other.id != item.id and other.criterion.strip().lower() == c_norm:
+                raise DuplicateResourceError(f"Criterion '{data.criterion.strip()}' already exists in this rubric.")
+        item.criterion = data.criterion.strip()
+
     if data.description is not None:
         item.description = data.description
+
     if data.max_marks is not None:
+        new_total = sum(
+            float(other.max_marks) if other.id != item.id else float(data.max_marks)
+            for other in item.rubric.items
+        )
+        if new_total > float(item.rubric.assignment.max_marks):
+            raise AppException(
+                detail=(
+                    f"Updating criterion max marks to {data.max_marks} causes total rubric marks ({new_total}) "
+                    f"to exceed assignment maximum marks ({item.rubric.assignment.max_marks})."
+                ),
+                status_code=422,
+            )
         item.max_marks = data.max_marks
 
     db.flush()
     db.refresh(item)
     return item
+
 
 
 def delete_rubric_item(db: Session, item_id: int, current_faculty: User) -> None:

@@ -140,11 +140,12 @@ def get_assessment_by_submission(
     db: Session,
     submission_id: int,
     current_user: User,
-) -> AssessmentResult:
+):
     """
     Retrieve assessment for a submission.
-    Faculty can view anytime.
-    Student can view if it's their submission and status is ready (COMPLETED, APPROVED, MODIFIED).
+    Faculty can view anytime with full internal evaluation context.
+    Student can view ONLY if it's their submission AND status is APPROVED or MODIFIED (released).
+    Internal evaluation details and faculty notes are redacted for students.
     """
     stmt = (
         select(Submission)
@@ -165,19 +166,29 @@ def get_assessment_by_submission(
     if current_user.role == UserRole.FACULTY:
         if submission.assignment.subject.faculty_id != current_user.id:
             raise InsufficientPermissionsError()
+        return submission.assessment
+
     elif current_user.role == UserRole.STUDENT:
         if submission.student_id != current_user.id:
             raise InsufficientPermissionsError()
-        # Student cannot view unfinished/failed states
-        if submission.assessment.status in [AssessmentStatus.PENDING, AssessmentStatus.PROCESSING, AssessmentStatus.FAILED]:
+
+        # Student cannot view unapproved draft evaluations
+        if submission.assessment.status not in [AssessmentStatus.APPROVED, AssessmentStatus.MODIFIED]:
             raise AppException(
-                detail="Assessment is not yet available for viewing.",
-                status_code=400,
+                detail="Assessment feedback has not been approved and released by faculty yet.",
+                status_code=403,
             )
+
+        from app.schemas.assessment import AssessmentResponse
+        # Sanitize student-facing assessment view
+        resp = AssessmentResponse.model_validate(submission.assessment)
+        resp.faculty_notes = None
+        resp.retrieved_context = []
+        resp.model_name = None
+        return resp
     else:
         raise InsufficientPermissionsError()
 
-    return submission.assessment
 
 
 def approve_assessment(
