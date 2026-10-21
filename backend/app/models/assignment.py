@@ -6,7 +6,7 @@ Represents an assignment belonging to a Subject and created by the faculty owner
 
 from datetime import datetime, timezone
 
-from sqlalchemy import DateTime, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -37,6 +37,7 @@ class Assignment(Base):
         nullable=False,
     )
     max_marks: Mapped[float] = mapped_column(Float, nullable=False)
+    is_archived: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     created_by: Mapped[int] = mapped_column(
         Integer,

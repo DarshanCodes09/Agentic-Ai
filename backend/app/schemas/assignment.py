@@ -42,6 +42,7 @@ class AssignmentUpdate(BaseModel):
     instructions: str | None = None
     due_date: datetime | None = None
     max_marks: float | None = Field(None, gt=0)
+    is_archived: bool | None = None
 
     @field_validator("title")
     @classmethod
@@ -62,6 +63,7 @@ class AssignmentResponse(BaseModel):
     instructions: str | None
     due_date: datetime
     max_marks: float
+    is_archived: bool = False
     created_by: int
     created_at: datetime
     updated_at: datetime

@@ -2,7 +2,7 @@
 Assignment service: handles CRUD operations and subject ownership/enrollment authorization.
 """
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import (
@@ -15,6 +15,7 @@ from app.core.exceptions import (
 from app.models.assignment import Assignment
 from app.models.rubric import Rubric
 from app.models.rubric_item import RubricItem
+from app.models.submission import Submission
 from app.models.subject import Subject
 from app.models.user import User, UserRole
 from app.schemas.assignment import AssignmentCreate, AssignmentUpdate
@@ -174,13 +175,18 @@ def update_assignment(
         raise InsufficientPermissionsError()
 
     if data.title is not None:
-        assignment.title = data.title.strip()
+        title_val = data.title.strip()
+        if not title_val:
+            raise AppException("Assignment title cannot be blank.", status_code=422)
+        assignment.title = title_val
     if data.description is not None:
         assignment.description = data.description
     if data.instructions is not None:
         assignment.instructions = data.instructions
     if data.due_date is not None:
         assignment.due_date = data.due_date
+    if data.is_archived is not None:
+        assignment.is_archived = data.is_archived
     if data.max_marks is not None:
         if assignment.rubric and assignment.rubric.items:
             current_criteria_sum = sum(float(i.max_marks) for i in assignment.rubric.items)
@@ -199,11 +205,39 @@ def update_assignment(
     return assignment
 
 
+def archive_assignment(
+    db: Session, assignment_id: int, current_faculty: User, is_archived: bool = True
+) -> Assignment:
+    """Archive or unarchive an assignment, strictly verifying faculty ownership."""
+    stmt = (
+        select(Assignment)
+        .options(
+            selectinload(Assignment.subject),
+            selectinload(Assignment.rubric).selectinload(Rubric.items),
+        )
+        .where(Assignment.id == assignment_id)
+    )
+    assignment = db.scalar(stmt)
+    if not assignment:
+        raise ResourceNotFoundError(f"Assignment with ID {assignment_id} not found.")
+
+    if assignment.subject.faculty_id != current_faculty.id:
+        raise InsufficientPermissionsError()
+
+    assignment.is_archived = is_archived
+    db.flush()
+    db.refresh(assignment)
+    return assignment
+
 
 def delete_assignment(
     db: Session, assignment_id: int, current_faculty: User
 ) -> None:
-    """Delete an assignment, strictly verifying faculty ownership."""
+    """
+    Delete an assignment, strictly verifying faculty ownership.
+    Safeguard: If student submissions exist, reject permanent deletion
+    to prevent silently deleting student submissions, grades, and feedback.
+    """
     stmt = (
         select(Assignment)
         .options(selectinload(Assignment.subject))
@@ -215,6 +249,21 @@ def delete_assignment(
 
     if assignment.subject.faculty_id != current_faculty.id:
         raise InsufficientPermissionsError()
+
+    submission_count = (
+        db.scalar(
+            select(func.count(Submission.id)).where(Submission.assignment_id == assignment_id)
+        )
+        or 0
+    )
+    if submission_count > 0:
+        raise AppException(
+            detail=(
+                f"Cannot delete assignment '{assignment.title}': it has {submission_count} student submission(s) "
+                "or assessment records. Please archive the assignment instead to preserve academic history."
+            ),
+            status_code=409,
+        )
 
     db.delete(assignment)
     db.flush()

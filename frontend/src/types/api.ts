@@ -34,6 +34,7 @@ export interface Subject {
   name: string;
   code: string;
   description: string | null;
+  is_archived?: boolean;
   faculty_id: number;
   faculty?: UserBrief | null;
   created_at: string;
@@ -56,6 +57,7 @@ export interface Assignment {
   instructions: string | null;
   due_date: string;
   max_marks: number;
+  is_archived?: boolean;
   created_by: number;
   created_at: string;
   updated_at: string;

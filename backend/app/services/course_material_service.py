@@ -190,6 +190,35 @@ def get_course_material(
     return material
 
 
+def update_course_material(
+    db: Session, material_id: int, title: str, current_faculty: User
+) -> CourseMaterial:
+    """Update course material metadata (title), strictly verifying faculty ownership."""
+    if current_faculty.role != UserRole.FACULTY:
+        raise InsufficientPermissionsError()
+
+    stmt = (
+        select(CourseMaterial)
+        .options(selectinload(CourseMaterial.subject))
+        .where(CourseMaterial.id == material_id)
+    )
+    material = db.scalar(stmt)
+    if not material:
+        raise ResourceNotFoundError(f"Course material with ID {material_id} not found.")
+
+    if material.subject.faculty_id != current_faculty.id:
+        raise InsufficientPermissionsError()
+
+    clean_title = title.strip()
+    if not clean_title:
+        raise AppException("Course material title cannot be blank.", status_code=422)
+
+    material.title = clean_title
+    db.flush()
+    db.refresh(material)
+    return material
+
+
 def delete_course_material(
     db: Session, material_id: int, current_faculty: User
 ) -> None:

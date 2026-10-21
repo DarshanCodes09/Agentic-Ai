@@ -114,6 +114,20 @@ def delete_subject(
     subject_service.delete_subject(db, subject_id, current_user)
 
 
+@router.post(
+    "/{subject_id}/archive",
+    response_model=SubjectResponse,
+    summary="Archive or unarchive course (Faculty owner only)",
+)
+def archive_subject(
+    subject_id: int,
+    archive: bool = True,
+    current_user: User = Depends(require_faculty),
+    db: Session = Depends(get_db),
+) -> SubjectResponse:
+    return subject_service.archive_subject(db, subject_id, current_user, is_archived=archive)
+
+
 # ---------------------------------------------------------------------------
 # Enrollment Endpoints
 # ---------------------------------------------------------------------------
