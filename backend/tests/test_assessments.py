@@ -249,13 +249,19 @@ def test_faculty_can_trigger_assessment_and_workflow(
     sub_check = client.get(f"/api/submissions/{submission_id}", headers=faculty_user["headers"])
     assert sub_check.json()["status"] == SubmissionStatus.UNDER_REVIEW.value
 
-    # 4. Student can view their completed assessment
-    student_view_res = client.get(
+    # 4. Student CANNOT view unapproved draft assessment (403), but Faculty can view it (200)
+    student_view_pre_approve = client.get(
         f"/api/submissions/{submission_id}/assessment",
         headers=student_user["headers"],
     )
-    assert student_view_res.status_code == 200
-    assert student_view_res.json()["id"] == assessment_id
+    assert student_view_pre_approve.status_code == 403
+
+    faculty_view_pre_approve = client.get(
+        f"/api/submissions/{submission_id}/assessment",
+        headers=faculty_user["headers"],
+    )
+    assert faculty_view_pre_approve.status_code == 200
+    assert faculty_view_pre_approve.json()["id"] == assessment_id
 
     # 5. Faculty approves assessment
     approve_res = client.post(
@@ -273,6 +279,17 @@ def test_faculty_can_trigger_assessment_and_workflow(
         f"/api/submissions/{submission_id}", headers=faculty_user["headers"]
     )
     assert sub_check_after_approve.json()["status"] == SubmissionStatus.EVALUATED.value
+
+    # 6. Student can now view approved assessment; faculty-only notes are redacted
+    student_view_post_approve = client.get(
+        f"/api/submissions/{submission_id}/assessment",
+        headers=student_user["headers"],
+    )
+    assert student_view_post_approve.status_code == 200
+    assert student_view_post_approve.json()["id"] == assessment_id
+    assert student_view_post_approve.json()["faculty_notes"] is None
+    assert student_view_post_approve.json()["retrieved_context"] == []
+
 
 
 def test_faculty_can_modify_assessment_score(

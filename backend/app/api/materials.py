@@ -27,6 +27,25 @@ def get_material(
     return course_material_service.get_course_material(db, material_id, current_user)
 
 
+@router.get(
+    "/{material_id}/file",
+    summary="Download or preview course material file (Faculty owner or enrolled student)",
+)
+def get_material_file(
+    material_id: int,
+    inline: bool = False,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return course_material_service.get_course_material_file_response(
+        db=db,
+        material_id=material_id,
+        current_user=current_user,
+        inline=inline,
+    )
+
+
+
 @router.delete(
     "/{material_id}",
     status_code=status.HTTP_204_NO_CONTENT,

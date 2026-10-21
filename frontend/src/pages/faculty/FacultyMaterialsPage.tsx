@@ -1,7 +1,9 @@
 import { FormEvent, useState } from "react";
 import { useParams } from "react-router-dom";
 import { getApiErrorMessage } from "../../api/client";
+import { downloadOrPreviewFile } from "../../api/files";
 import { subjectsApi } from "../../api/subjects";
+
 import { PageHeader } from "../../components/common/PageHeader";
 import { Badge, statusTone } from "../../components/ui/Badge";
 import { Button } from "../../components/ui/Button";
@@ -44,7 +46,55 @@ export function FacultyMaterialsPage() {
       <PageHeader title={`${subject.data?.name} materials`} eyebrow="Course knowledge" description="Upload PDF or DOCX files. Document processing and retrieval remain backend-owned." />
       <div className="grid gap-6 lg:grid-cols-[0.8fr_1.2fr]">
         <Card><CardTitle>Upload material</CardTitle><form onSubmit={upload} className="mt-4 space-y-4"><Field label="Title"><Input value={title} onChange={(e) => setTitle(e.target.value)} /></Field><Field label="PDF or DOCX"><Input type="file" accept=".pdf,.docx" onChange={(e) => setFile(e.target.files?.[0] ?? null)} /></Field>{error ? <p className="text-sm text-red-700">{error}</p> : null}<Button disabled={!file}>Upload</Button></form></Card>
-        <Card><CardTitle>Materials</CardTitle><div className="mt-4">{materials.loading ? <LoadingState /> : materials.data?.length ? <Table columns={["Title", "Filename", "Status", "Uploaded"]} rows={materials.data.map((item) => [item.title, item.original_filename, <Badge tone={statusTone(item.processing_status)}>{item.processing_status}</Badge>, formatDate(item.created_at)])} /> : <EmptyState title="No materials uploaded." />}</div></Card>
+        <Card>
+          <CardTitle>Materials</CardTitle>
+          <div className="mt-4">
+            {materials.loading ? (
+              <LoadingState />
+            ) : materials.data?.length ? (
+              <Table
+                columns={["Title", "Filename", "Status", "Uploaded", "Actions"]}
+                rows={materials.data.map((item) => [
+                  item.title,
+                  item.original_filename,
+                  <Badge tone={statusTone(item.processing_status)}>{item.processing_status}</Badge>,
+                  formatDate(item.created_at),
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() =>
+                        downloadOrPreviewFile(
+                          `/materials/${item.id}/file`,
+                          item.original_filename,
+                          true
+                        )
+                      }
+                      className="cursor-pointer text-xs font-medium underline hover:text-ink"
+                    >
+                      Preview
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        downloadOrPreviewFile(
+                          `/materials/${item.id}/file`,
+                          item.original_filename,
+                          false
+                        )
+                      }
+                      className="cursor-pointer text-xs font-medium underline hover:text-ink"
+                    >
+                      Download
+                    </button>
+                  </div>,
+                ])}
+              />
+            ) : (
+              <EmptyState title="No materials uploaded." />
+            )}
+          </div>
+        </Card>
+
       </div>
     </>
   );

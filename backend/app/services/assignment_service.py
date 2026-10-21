@@ -6,11 +6,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.exceptions import (
+    AppException,
+    DuplicateResourceError,
     InsufficientPermissionsError,
     NotEnrolledError,
     ResourceNotFoundError,
 )
 from app.models.assignment import Assignment
+from app.models.rubric import Rubric
+from app.models.rubric_item import RubricItem
 from app.models.subject import Subject
 from app.models.user import User, UserRole
 from app.schemas.assignment import AssignmentCreate, AssignmentUpdate
@@ -30,7 +34,7 @@ def create_assignment(
 
     assignment = Assignment(
         subject_id=subject_id,
-        title=data.title,
+        title=data.title.strip(),
         description=data.description,
         instructions=data.instructions,
         due_date=data.due_date,
@@ -39,8 +43,57 @@ def create_assignment(
     )
     db.add(assignment)
     db.flush()
+
+    if data.rubric:
+        # Validate criteria sum
+        if data.rubric.items:
+            seen = set()
+            criteria_sum = 0.0
+            for item in data.rubric.items:
+                norm = item.criterion.strip().lower()
+                if norm in seen:
+                    raise DuplicateResourceError(f"Duplicate criterion '{item.criterion.strip()}' in rubric.")
+                seen.add(norm)
+                criteria_sum += float(item.max_marks)
+
+            if criteria_sum > float(data.max_marks):
+                raise AppException(
+                    detail=(
+                        f"Total rubric criteria marks ({criteria_sum}) exceed assignment "
+                        f"maximum marks ({data.max_marks})."
+                    ),
+                    status_code=422,
+                )
+
+        rubric = Rubric(
+            assignment_id=assignment.id,
+            name=data.rubric.name.strip() if data.rubric.name else f"{data.title.strip()} Rubric",
+            description=data.rubric.description,
+        )
+        db.add(rubric)
+        db.flush()
+
+        if data.rubric.items:
+            for item_data in data.rubric.items:
+                rub_item = RubricItem(
+                    rubric_id=rubric.id,
+                    criterion=item_data.criterion.strip(),
+                    description=item_data.description,
+                    max_marks=item_data.max_marks,
+                )
+                db.add(rub_item)
+            db.flush()
+
     db.refresh(assignment)
-    return assignment
+    stmt = (
+        select(Assignment)
+        .options(
+            selectinload(Assignment.subject),
+            selectinload(Assignment.rubric).selectinload(Rubric.items),
+        )
+        .where(Assignment.id == assignment.id)
+    )
+    return db.scalar(stmt)
 
 
 def list_subject_assignments(
@@ -64,6 +117,9 @@ def list_subject_assignments(
 
     stmt = (
         select(Assignment)
+        .options(
+            selectinload(Assignment.rubric).selectinload(Rubric.items),
+        )
         .where(Assignment.subject_id == subject_id)
         .order_by(Assignment.due_date.asc())
     )
@@ -78,7 +134,10 @@ def get_assignment_by_id(
     """
     stmt = (
         select(Assignment)
-        .options(selectinload(Assignment.subject))
+        .options(
+            selectinload(Assignment.subject),
+            selectinload(Assignment.rubric).selectinload(Rubric.items),
+        )
         .where(Assignment.id == assignment_id)
     )
     assignment = db.scalar(stmt)
@@ -101,7 +160,10 @@ def update_assignment(
     """Update assignment details, strictly verifying faculty ownership."""
     stmt = (
         select(Assignment)
-        .options(selectinload(Assignment.subject))
+        .options(
+            selectinload(Assignment.subject),
+            selectinload(Assignment.rubric).selectinload(Rubric.items),
+        )
         .where(Assignment.id == assignment_id)
     )
     assignment = db.scalar(stmt)
@@ -112,7 +174,7 @@ def update_assignment(
         raise InsufficientPermissionsError()
 
     if data.title is not None:
-        assignment.title = data.title
+        assignment.title = data.title.strip()
     if data.description is not None:
         assignment.description = data.description
     if data.instructions is not None:
@@ -120,11 +182,22 @@ def update_assignment(
     if data.due_date is not None:
         assignment.due_date = data.due_date
     if data.max_marks is not None:
+        if assignment.rubric and assignment.rubric.items:
+            current_criteria_sum = sum(float(i.max_marks) for i in assignment.rubric.items)
+            if current_criteria_sum > float(data.max_marks):
+                raise AppException(
+                    detail=(
+                        f"New maximum marks ({data.max_marks}) is less than existing rubric criteria "
+                        f"sum ({current_criteria_sum}). Please adjust rubric criteria first."
+                    ),
+                    status_code=422,
+                )
         assignment.max_marks = data.max_marks
 
     db.flush()
     db.refresh(assignment)
     return assignment
+
 
 
 def delete_assignment(

@@ -105,12 +105,15 @@ class AssessmentPreparationService:
                 })
 
         # Determine total max marks
-        if total_q_marks > 0:
+        if assignment.max_marks and float(assignment.max_marks) > 0:
+            total_max_marks = float(assignment.max_marks)
+        elif total_q_marks > 0:
             total_max_marks = total_q_marks
         elif total_rubric_marks > 0:
             total_max_marks = total_rubric_marks
         else:
             total_max_marks = 100.0
+
 
         # If no rubric items exist, create a default criterion using total marks
         if not rubric_items_data:
