@@ -151,14 +151,18 @@ export function StudentSubmissionsPage() {
             />
           </Field>
           <Field
-            label="Upload revised PDF or DOCX (optional)"
-            hint={replaceFile ? `Selected: ${replaceFile.name}` : undefined}
+            label="Upload revised file (Notebook, Code, ZIP, or Document)"
+            hint={
+              replaceFile
+                ? `Selected: ${replaceFile.name} (${(replaceFile.size / (1024 * 1024)).toFixed(2)} MB)`
+                : "Accepted formats: .ipynb, .py, .zip, .java, .cpp, .ts, .pdf, .docx, .md, etc. (Max 25 MB)"
+            }
           >
             <input
               type="file"
-              accept=".pdf,.docx"
+              accept=".ipynb,.py,.zip,.java,.cpp,.c,.h,.cs,.js,.ts,.html,.css,.r,.sql,.sh,.pdf,.docx,.doc,.txt,.md,.csv,.json"
               onChange={(e) => setReplaceFile(e.target.files?.[0] ?? null)}
-              className="focus-ring w-full rounded-md border border-line bg-white px-3 py-2 text-sm"
+              className="focus-ring w-full rounded-md border border-line bg-white px-3 py-2 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-stone-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-ink hover:file:bg-stone-200"
             />
           </Field>
 
