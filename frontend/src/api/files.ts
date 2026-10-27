@@ -3,10 +3,11 @@ import { apiClient } from "./client";
 export async function downloadOrPreviewFile(
   endpoint: string,
   fallbackFilename: string = "download",
-  inline: boolean = false
+  inline: boolean = false,
+  extraParams?: Record<string, unknown>
 ): Promise<void> {
   const response = await apiClient.get(endpoint, {
-    params: { inline },
+    params: { inline, ...(extraParams || {}) },
     responseType: "blob",
   });
 

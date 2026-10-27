@@ -48,26 +48,42 @@ export function StudentSubmissionPage({ assessmentMode = false }: { assessmentMo
       <PageHeader
         title="Submit assignment"
         eyebrow="Student submission"
-        description="Upload PDF/DOCX work, text answers, or both. Backend validation remains authoritative."
+        description="Upload Jupyter notebooks (.ipynb), source code (.py, .java, .cpp, .ts), multi-file ZIP projects, or academic documents (.pdf, .docx, .md, .txt). Configured file limit: 25 MB."
       />
       <form onSubmit={onSubmit} className="max-w-3xl space-y-5 rounded-lg border border-line bg-white p-6 shadow-soft">
         <Field label="Submission text">
           <Textarea
             value={text}
             onChange={(e) => setText(e.target.value)}
-            placeholder="Paste or type your answer..."
+            placeholder="Paste or type your answer, project notes, or execution summary..."
           />
         </Field>
         <Field
-          label="PDF or DOCX upload"
-          hint={file ? `Selected: ${file.name}` : "Accepted file types are validated by the backend."}
+          label="File Upload (Notebook, Code, ZIP Project, or Document)"
+          hint={
+            file
+              ? `Selected: ${file.name} (${(file.size / (1024 * 1024)).toFixed(2)} MB)`
+              : "Supported formats: .ipynb, .py, .zip, .java, .cpp, .ts, .js, .pdf, .docx, .txt, .md, .csv (Max 25 MB)."
+          }
         >
-          <input
-            className="focus-ring w-full rounded-md border border-line bg-white px-3 py-2.5 text-sm"
-            type="file"
-            accept=".pdf,.docx"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          />
+          <div className="space-y-2">
+            <input
+              className="focus-ring w-full rounded-md border border-line bg-white px-3 py-2.5 text-sm file:mr-3 file:rounded-md file:border-0 file:bg-stone-100 file:px-3 file:py-1 file:text-xs file:font-semibold file:text-ink hover:file:bg-stone-200"
+              type="file"
+              accept=".ipynb,.py,.zip,.java,.cpp,.c,.h,.cs,.js,.ts,.html,.css,.r,.sql,.sh,.pdf,.docx,.doc,.txt,.md,.csv,.json"
+              onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+            />
+            {file && (
+              <div className="flex items-center gap-2 pt-1 text-xs text-muted">
+                <span className="font-medium text-ink">Format detected:</span>
+                <span className="rounded bg-stone-100 px-2 py-0.5 font-mono text-[11px] text-ink">
+                  {file.name.split(".").pop()?.toUpperCase() || "FILE"}
+                </span>
+                <span>•</span>
+                <span>{(file.size / 1024).toFixed(1)} KB</span>
+              </div>
+            )}
+          </div>
         </Field>
         {error ? <p className="text-sm text-red-700">{error}</p> : null}
         <Button disabled={loading}>{loading ? "Submitting..." : "Submit work"}</Button>

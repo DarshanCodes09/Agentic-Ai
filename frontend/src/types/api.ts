@@ -110,6 +110,45 @@ export interface Submission {
   student?: UserBrief | null;
 }
 
+export interface ProjectFileEntry {
+  rel_path: string;
+  size: number;
+  category: string;
+  extension: string;
+  is_test: boolean;
+}
+
+export interface ExecutionAuditSummary {
+  total_cells: number;
+  markdown_cells?: number;
+  code_cells: number;
+  executed_code_cells: number;
+  unexecuted_code_cells: number;
+  cells_with_errors: number;
+  execution_status: string;
+  execution_order_anomaly: boolean;
+  kernel_language: string;
+}
+
+export interface SubmissionManifest {
+  submission_id: number;
+  has_file: boolean;
+  original_filename: string | null;
+  file_format: string | null;
+  file_size?: number;
+  file_manifest?: {
+    total_files: number;
+    total_size_bytes: number;
+    category_counts: Record<string, number>;
+    has_readme: boolean;
+    has_tests: boolean;
+    has_manifest: boolean;
+    notebook_count: number;
+    files: ProjectFileEntry[];
+  } | null;
+  execution_audit?: ExecutionAuditSummary | null;
+}
+
 export type AssessmentStatus = "PENDING" | "PROCESSING" | "COMPLETED" | "FAILED" | "APPROVED" | "MODIFIED";
 
 export interface CriterionEvaluation {
