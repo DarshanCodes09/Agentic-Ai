@@ -150,9 +150,10 @@ def get_submission_file_response(
     submission_id: int,
     current_user: User,
     inline: bool = False,
+    subpath: str | None = None,
 ):
     """
-    Retrieve FileResponse for student submitted file.
+    Retrieve FileResponse for student submitted file or extracted subfile.
     Authorized for the student submitter or the faculty owning the assignment.
     """
     submission = get_submission_by_id(db, submission_id, current_user)
@@ -160,18 +161,247 @@ def get_submission_file_response(
     if not submission.file_path:
         raise ResourceNotFoundError("No file was uploaded with this submission.")
 
+    from pathlib import Path
     from app.services.file_storage.security import (
         build_secure_file_response,
         validate_file_path_safe,
     )
+    from app.services.document_processing.zip_processor import get_zip_processor
+
     storage = get_file_storage_service()
-    safe_path = validate_file_path_safe(submission.file_path, storage.upload_dir)
+    safe_main_path = validate_file_path_safe(submission.file_path, storage.upload_dir)
+
+    if subpath:
+        ext = safe_main_path.suffix.lower()
+        if ext != ".zip":
+            raise AppException(
+                detail="Subpath previews are only supported for archive (.zip) submissions.",
+                status_code=400,
+            )
+        from app.services.file_storage.storage import get_archive_unpacked_dir
+        unpack_dir = get_archive_unpacked_dir(safe_main_path)
+        if not unpack_dir.exists():
+            zip_proc = get_zip_processor()
+            zip_proc.inspect_and_extract(safe_main_path, target_extract_dir=unpack_dir)
+
+        safe_subfile = validate_file_path_safe(str(unpack_dir / subpath), unpack_dir)
+        return build_secure_file_response(
+            file_path=safe_subfile,
+            original_filename=Path(subpath).name,
+            inline=inline,
+        )
 
     return build_secure_file_response(
-        file_path=safe_path,
+        file_path=safe_main_path,
         original_filename=submission.original_filename,
         inline=inline,
     )
+
+
+def get_submission_manifest(
+    db: Session,
+    submission_id: int,
+    current_user: User,
+) -> dict:
+    """
+    Get detailed manifest and file breakdown of a submission.
+    Authorized for the student submitter or the faculty owning the assignment.
+    """
+    submission = get_submission_by_id(db, submission_id, current_user)
+    if not submission.file_path:
+        return {
+            "submission_id": submission.id,
+            "has_file": False,
+            "file_format": None,
+            "file_manifest": None,
+            "execution_audit": None,
+        }
+
+    from pathlib import Path
+    from app.services.file_storage.security import validate_file_path_safe
+    from app.services.document_processing.notebook_processor import get_notebook_processor
+    from app.services.document_processing.zip_processor import get_zip_processor
+
+    storage = get_file_storage_service()
+    safe_path = validate_file_path_safe(submission.file_path, storage.upload_dir)
+    ext = safe_path.suffix.lower()
+    orig_name = submission.original_filename or safe_path.name
+
+    file_manifest = None
+    execution_audit = None
+
+    if ext == ".ipynb":
+        nb = get_notebook_processor().parse_file(safe_path, filename=orig_name)
+        execution_audit = {
+            "total_cells": nb.audit.total_cells,
+            "markdown_cells": nb.audit.markdown_cells,
+            "code_cells": nb.audit.code_cells,
+            "executed_code_cells": nb.audit.executed_code_cells,
+            "unexecuted_code_cells": nb.audit.unexecuted_code_cells,
+            "cells_with_errors": nb.audit.cells_with_errors,
+            "execution_status": nb.audit.execution_status,
+            "execution_order_anomaly": nb.audit.execution_order_anomaly,
+            "kernel_language": nb.audit.kernel_language,
+        }
+    elif ext == ".zip":
+        from app.services.file_storage.storage import get_archive_unpacked_dir
+        unpack_dir = get_archive_unpacked_dir(safe_path)
+        zip_proc = get_zip_processor()
+        manifest = zip_proc.inspect_and_extract(safe_path, target_extract_dir=unpack_dir)
+        file_manifest = {
+            "total_files": manifest.total_files,
+            "total_size_bytes": manifest.total_size_bytes,
+            "category_counts": manifest.category_counts,
+            "has_readme": manifest.has_readme,
+            "has_tests": manifest.has_tests,
+            "has_manifest": manifest.has_manifest,
+            "notebook_count": len(manifest.notebooks),
+            "files": [
+                {
+                    "rel_path": e.rel_path,
+                    "size": e.size,
+                    "category": e.category,
+                    "extension": e.extension,
+                    "is_test": e.is_test,
+                }
+                for e in manifest.file_entries
+            ],
+        }
+        if manifest.notebooks:
+            nb = manifest.notebooks[0]
+            execution_audit = {
+                "total_cells": nb.audit.total_cells,
+                "markdown_cells": nb.audit.markdown_cells,
+                "code_cells": nb.audit.code_cells,
+                "executed_code_cells": nb.audit.executed_code_cells,
+                "unexecuted_code_cells": nb.audit.unexecuted_code_cells,
+                "cells_with_errors": nb.audit.cells_with_errors,
+                "execution_status": nb.audit.execution_status,
+                "execution_order_anomaly": nb.audit.execution_order_anomaly,
+                "kernel_language": nb.audit.kernel_language,
+            }
+
+    return {
+        "submission_id": submission.id,
+        "has_file": True,
+        "original_filename": orig_name,
+        "file_format": ext.lstrip("."),
+        "file_size": safe_path.stat().st_size,
+        "file_manifest": file_manifest,
+        "execution_audit": execution_audit,
+    }
+
+
+def get_submission_evidence_report(
+    db: Session,
+    submission_id: int,
+    current_user: User,
+) -> dict:
+    """
+    Get detailed assessment evidence diagnostic report for faculty review or student inspection.
+    Includes discovered archive entries, processing status counts, rubric evidence mapping,
+    omitted or truncated files, vision inspection verification, and human review flags.
+    """
+    submission = get_submission_by_id(db, submission_id, current_user)
+    if not submission.file_path:
+        return {
+            "submission_id": submission.id,
+            "original_filename": None,
+            "file_format": None,
+            "total_archive_entries": 0,
+            "supported_files_count": 0,
+            "successfully_processed_count": 0,
+            "failed_files_count": 0,
+            "unsupported_files_count": 0,
+            "truncated_files_count": 0,
+            "omitted_files_count": 0,
+            "vision_inspected": False,
+            "vision_inspected_count": 0,
+            "file_inventory": [],
+            "criterion_evidence_mapping": {},
+            "truncated_or_excluded_files": [],
+            "criteria_requiring_human_review": [],
+        }
+
+    from pathlib import Path
+    import mimetypes
+    from app.services.file_storage.security import validate_file_path_safe
+    from app.services.file_storage.storage import get_archive_unpacked_dir
+    from app.services.document_processing.zip_processor import get_zip_processor
+
+    storage = get_file_storage_service()
+    safe_path = validate_file_path_safe(submission.file_path, storage.upload_dir)
+    ext = safe_path.suffix.lower()
+    orig_name = submission.original_filename or safe_path.name
+    zip_proc = get_zip_processor()
+
+    # Load assignment rubric items
+    rubric_items_data = []
+    assignment = submission.assignment
+    if assignment and assignment.rubric and assignment.rubric.items:
+        rubric_items_data = [
+            {"id": item.id, "criterion": item.criterion, "description": item.description, "max_marks": float(item.max_marks)}
+            for item in assignment.rubric.items
+        ]
+
+    instructions = assignment.instructions if assignment else None
+    title = assignment.title if assignment else None
+
+    if ext == ".zip":
+        unpack_dir = get_archive_unpacked_dir(safe_path)
+        manifest = zip_proc.inspect_and_extract(safe_path, target_extract_dir=unpack_dir)
+        zip_proc._rank_inventory_relevance(
+            inventory=manifest,
+            rubric_items=rubric_items_data,
+            assignment_instructions=instructions,
+            assignment_title=title,
+        )
+        return zip_proc.generate_evidence_report(
+            submission_id=submission.id,
+            inventory=manifest,
+            original_filename=orig_name,
+        )
+
+    # For direct non-archive files
+    detected_mime = mimetypes.guess_type(orig_name)[0] or "application/octet-stream"
+    file_size = safe_path.stat().st_size
+    return {
+        "submission_id": submission.id,
+        "original_filename": orig_name,
+        "file_format": ext.lstrip("."),
+        "total_archive_entries": 1,
+        "supported_files_count": 1,
+        "successfully_processed_count": 1,
+        "failed_files_count": 0,
+        "unsupported_files_count": 0,
+        "truncated_files_count": 0,
+        "omitted_files_count": 0,
+        "vision_inspected": False,
+        "vision_inspected_count": 0,
+        "category_counts": {ext.lstrip("."): 1},
+        "file_inventory": [
+            {
+                "rel_path": orig_name,
+                "filename": safe_path.name,
+                "extension": ext,
+                "detected_content_type": detected_mime,
+                "category": ext.lstrip("."),
+                "size_bytes": file_size,
+                "processing_status": "PROCESSED",
+                "useful_content_extracted": True,
+                "summary": f"Direct single-file submission: {orig_name} ({file_size} bytes).",
+                "error_or_omission_reason": None,
+                "vision_inspected": False,
+                "is_test": False,
+                "relevance_score": 100.0,
+            }
+        ],
+        "criterion_evidence_mapping": {
+            r["criterion"]: [orig_name] for r in rubric_items_data
+        },
+        "truncated_or_excluded_files": [],
+        "criteria_requiring_human_review": [],
+    }
 
 
 async def replace_submission(

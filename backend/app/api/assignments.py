@@ -2,24 +2,40 @@
 Assignment API routes: assignments, questions, rubrics, and submissions under assignments.
 """
 
-from fastapi import APIRouter, Depends, Request, status
+from fastapi import APIRouter, Depends, File, Form, Request, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_current_user, require_faculty, require_student
 from app.database.session import get_db
 from app.models.user import User
-from app.schemas.assignment import AssignmentResponse, AssignmentUpdate
+from app.schemas.assignment import AssignmentFileResponse, AssignmentResponse, AssignmentUpdate
 from app.schemas.question import QuestionCreate, QuestionResponse
-from app.schemas.rubric import RubricCreate, RubricResponse
+from app.schemas.rubric import ExtractedRubricResponse, RubricCreate, RubricResponse
 from app.schemas.submission import SubmissionResponse
 from app.services import (
+    assignment_file_service,
     assignment_service,
     question_service,
     rubric_service,
     submission_service,
 )
+from app.services.rubric_extraction_service import get_rubric_extraction_service
 
 router = APIRouter(prefix="/api/assignments", tags=["Assignments"])
+
+
+@router.post(
+    "/extract-rubric-from-file",
+    response_model=ExtractedRubricResponse,
+    summary="Extract rubric and criteria breakdown from an uploaded assignment document (Faculty only)",
+)
+async def extract_rubric_from_file(
+    file: UploadFile = File(...),
+    max_marks: float | None = Form(None),
+    current_user: User = Depends(require_faculty),
+) -> ExtractedRubricResponse:
+    service = get_rubric_extraction_service()
+    return await service.extract_rubric_from_upload(file=file, expected_max_marks=max_marks)
 
 
 @router.get(
@@ -193,3 +209,122 @@ def list_submissions(
     db: Session = Depends(get_db),
 ) -> list[SubmissionResponse]:
     return submission_service.list_assignment_submissions(db, assignment_id, current_user)
+
+
+# ---------------------------------------------------------------------------
+# Assignment Files (Instructions, Rubric Documents, Specifications)
+# ---------------------------------------------------------------------------
+
+@router.post(
+    "/{assignment_id}/files",
+    response_model=AssignmentFileResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Upload assignment instruction or specification file (Faculty owner only)",
+)
+async def upload_assignment_file(
+    assignment_id: int,
+    file: UploadFile = File(...),
+    current_user: User = Depends(require_faculty),
+    db: Session = Depends(get_db),
+) -> AssignmentFileResponse:
+    return await assignment_file_service.upload_assignment_file(
+        db=db,
+        assignment_id=assignment_id,
+        file=file,
+        current_faculty=current_user,
+    )
+
+
+@router.get(
+    "/{assignment_id}/files",
+    response_model=list[AssignmentFileResponse],
+    summary="List all attached files for an assignment (Faculty owner or enrolled student)",
+)
+def list_assignment_files(
+    assignment_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[AssignmentFileResponse]:
+    return assignment_file_service.list_assignment_files(
+        db=db,
+        assignment_id=assignment_id,
+        current_user=current_user,
+    )
+
+
+@router.get(
+    "/{assignment_id}/files/{file_id}",
+    response_model=AssignmentFileResponse,
+    summary="Get assignment file metadata (Faculty owner or enrolled student)",
+)
+def get_assignment_file(
+    assignment_id: int,
+    file_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AssignmentFileResponse:
+    return assignment_file_service.get_assignment_file(
+        db=db,
+        assignment_id=assignment_id,
+        file_id=file_id,
+        current_user=current_user,
+    )
+
+
+@router.get(
+    "/{assignment_id}/files/{file_id}/file",
+    summary="Download or inline preview an assignment file (Faculty owner or enrolled student)",
+)
+def get_assignment_file_content(
+    assignment_id: int,
+    file_id: int,
+    inline: bool = False,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return assignment_file_service.get_assignment_file_response(
+        db=db,
+        assignment_id=assignment_id,
+        file_id=file_id,
+        current_user=current_user,
+        inline=inline,
+    )
+
+
+@router.get(
+    "/{assignment_id}/files/{file_id}/download",
+    summary="Alias to download assignment file (Faculty owner or enrolled student)",
+)
+def download_assignment_file(
+    assignment_id: int,
+    file_id: int,
+    inline: bool = False,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    return assignment_file_service.get_assignment_file_response(
+        db=db,
+        assignment_id=assignment_id,
+        file_id=file_id,
+        current_user=current_user,
+        inline=inline,
+    )
+
+
+@router.delete(
+    "/{assignment_id}/files/{file_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete an assignment file (Faculty owner only)",
+)
+def delete_assignment_file(
+    assignment_id: int,
+    file_id: int,
+    current_user: User = Depends(require_faculty),
+    db: Session = Depends(get_db),
+) -> None:
+    assignment_file_service.delete_assignment_file(
+        db=db,
+        assignment_id=assignment_id,
+        file_id=file_id,
+        current_faculty=current_user,
+    )

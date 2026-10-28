@@ -85,6 +85,12 @@ class Assignment(Base):
         back_populates="assignment",
         cascade="all, delete-orphan",
     )
+    files: Mapped[list["AssignmentFile"]] = relationship(  # type: ignore[name-defined]  # noqa: F821
+        "AssignmentFile",
+        back_populates="assignment",
+        cascade="all, delete-orphan",
+        order_by="AssignmentFile.id",
+    )
 
     def __repr__(self) -> str:
         return f"<Assignment id={self.id} title={self.title!r}>"

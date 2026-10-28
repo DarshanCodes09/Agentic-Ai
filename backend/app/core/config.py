@@ -46,6 +46,23 @@ class Settings(BaseSettings):
     groq_api_key: str | None = None
     groq_model: str = "llama-3.3-70b-versatile"
 
+    # Multi-Format Submissions, Code & Notebooks (Phase 10)
+    max_upload_size_mb: int = 25
+    max_zip_extracted_size_mb: int = 60
+    max_zip_file_count: int = 250
+    max_code_file_size_kb: int = 500
+    max_notebook_cell_output_chars: int = 600
+
+    # Assessment Prompt & Evidence Budgets (Groq 413 & TPM Safeguards)
+    max_assessment_prompt_tokens: int = 4200
+    max_assessment_prompt_chars: int = 16000
+    max_submission_evidence_chars: int = 8000
+    max_code_file_chars: int = 2500
+    max_project_source_files: int = 5
+    max_rag_context_chars: int = 1200
+    max_assignment_instructions_chars: int = 1500
+    max_notebook_cells: int = 25
+
     model_config = SettingsConfigDict(
         # .env.test provides test fallbacks; runtime .env takes precedence when present.
         env_file=(".env.test", ".env"),

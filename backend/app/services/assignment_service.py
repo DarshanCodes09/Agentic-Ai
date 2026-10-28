@@ -91,6 +91,7 @@ def create_assignment(
         .options(
             selectinload(Assignment.subject),
             selectinload(Assignment.rubric).selectinload(Rubric.items),
+            selectinload(Assignment.files),
         )
         .where(Assignment.id == assignment.id)
     )
@@ -120,6 +121,7 @@ def list_subject_assignments(
         select(Assignment)
         .options(
             selectinload(Assignment.rubric).selectinload(Rubric.items),
+            selectinload(Assignment.files),
         )
         .where(Assignment.subject_id == subject_id)
         .order_by(Assignment.due_date.asc())
@@ -138,6 +140,7 @@ def get_assignment_by_id(
         .options(
             selectinload(Assignment.subject),
             selectinload(Assignment.rubric).selectinload(Rubric.items),
+            selectinload(Assignment.files),
         )
         .where(Assignment.id == assignment_id)
     )
@@ -164,6 +167,7 @@ def update_assignment(
         .options(
             selectinload(Assignment.subject),
             selectinload(Assignment.rubric).selectinload(Rubric.items),
+            selectinload(Assignment.files),
         )
         .where(Assignment.id == assignment_id)
     )
@@ -214,6 +218,7 @@ def archive_assignment(
         .options(
             selectinload(Assignment.subject),
             selectinload(Assignment.rubric).selectinload(Rubric.items),
+            selectinload(Assignment.files),
         )
         .where(Assignment.id == assignment_id)
     )

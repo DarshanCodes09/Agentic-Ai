@@ -55,6 +55,19 @@ class AssignmentUpdate(BaseModel):
         return v
 
 
+class AssignmentFileResponse(BaseModel):
+    id: int
+    assignment_id: int
+    uploaded_by: int
+    original_filename: str
+    stored_filename: str
+    file_type: str
+    file_size: int
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class AssignmentResponse(BaseModel):
     id: int
     subject_id: int
@@ -68,5 +81,6 @@ class AssignmentResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
     rubric: RubricResponse | None = None
+    files: list[AssignmentFileResponse] = []
 
     model_config = {"from_attributes": True}

@@ -99,3 +99,20 @@ class RubricResponse(BaseModel):
     items: list[RubricItemResponse] = []
 
     model_config = {"from_attributes": True}
+
+
+class ExtractedRubricItem(BaseModel):
+    criterion: str
+    description: str | None = None
+    max_marks: float
+
+
+class ExtractedRubricResponse(BaseModel):
+    has_rubric: bool
+    rubric_name: str | None = None
+    total_marks: float | None = None
+    items: list[ExtractedRubricItem] = []
+    assignment_summary: str | None = None
+    requirements_summary: str | None = None
+    message: str | None = None
+    extracted_text_preview: str | None = None

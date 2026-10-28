@@ -82,6 +82,12 @@ class LLMService:
     def provider(self) -> BaseLLMProvider:
         return self._provider
 
+    @property
+    def model_name(self) -> str:
+        if hasattr(self._provider, "model"):
+            return str(getattr(self._provider, "model"))
+        return "mock"
+
     async def generate(
         self,
         prompt: str,
@@ -105,6 +111,22 @@ class LLMService:
             system_prompt=system_prompt,
             **kwargs,
         )
+
+    @property
+    def has_vision_capability(self) -> bool:
+        """Check if active LLM provider supports image understanding."""
+        return getattr(self._provider, "has_vision_capability", False)
+
+    async def analyze_image(
+        self,
+        image_path: str,
+        prompt: str = "Analyze this academic plot, chart, or diagram and describe its axes, metrics, trends, and results.",
+        **kwargs: Any,
+    ) -> str | None:
+        """Analyze image using vision provider if supported."""
+        if not self.has_vision_capability:
+            return None
+        return await self._provider.analyze_image(image_path, prompt=prompt, **kwargs)
 
 
 _llm_service_instance: LLMService | None = None
