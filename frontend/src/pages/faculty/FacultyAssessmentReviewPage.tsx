@@ -20,11 +20,25 @@ export function FacultyAssessmentReviewPage() {
   const submissionId = Number(useParams().submissionId);
   const submission = useAsync(() => submissionsApi.get(submissionId), [submissionId]);
   const assessment = useAsync(() => assessmentsApi.getBySubmission(submissionId), [submissionId]);
+  const manifest = useAsync(() => submissionsApi.getManifest(submissionId), [submissionId]);
   const [finalScore, setFinalScore] = useState("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
   const [reassessModalOpen, setReassessModalOpen] = useState(false);
   const [reassessLoading, setReassessLoading] = useState(false);
+
+  function getExecutionTone(status?: string): "positive" | "attention" | "critical" | "neutral" {
+    switch (status) {
+      case "COMPLETE":
+        return "positive";
+      case "PARTIAL":
+        return "attention";
+      case "ERRORED":
+        return "critical";
+      default:
+        return "neutral";
+    }
+  }
 
   async function trigger() {
     setError("");
@@ -95,13 +109,30 @@ export function FacultyAssessmentReviewPage() {
             </form>
           </Card>
           <Card className="lg:col-span-2">
-            <CardTitle>Submission</CardTitle>
-            <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-muted">{submission.data?.submission_text ?? "File submission only."}</p>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <CardTitle>Submission & Deliverables</CardTitle>
+              {manifest.data?.file_format && (
+                <span className="rounded bg-stone-100 px-2 py-0.5 font-mono text-xs font-semibold text-ink">
+                  {manifest.data.file_format}
+                </span>
+              )}
+            </div>
+
+            {submission.data?.submission_text && (
+              <div className="mt-3 rounded-md bg-stone-50 p-3 text-sm leading-6 text-ink">
+                <span className="mb-1 block text-xs font-semibold uppercase text-muted">Student Answer / Notes</span>
+                <p className="whitespace-pre-wrap">{submission.data.submission_text}</p>
+              </div>
+            )}
+
             {submission.data?.original_filename ? (
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-md border border-line bg-stone-50/70 p-3">
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-semibold uppercase text-muted">Submitted File:</span>
                   <span className="text-sm font-medium text-ink">{submission.data.original_filename}</span>
+                  {manifest.data?.file_size && (
+                    <span className="text-xs text-muted">({(manifest.data.file_size / 1024).toFixed(1)} KB)</span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <Button
@@ -111,7 +142,7 @@ export function FacultyAssessmentReviewPage() {
                     onClick={() =>
                       downloadOrPreviewFile(
                         `/submissions/${submissionId}/file`,
-                        submission.data?.original_filename ?? "submission.pdf",
+                        submission.data?.original_filename ?? "submission",
                         true
                       )
                     }
@@ -125,13 +156,143 @@ export function FacultyAssessmentReviewPage() {
                     onClick={() =>
                       downloadOrPreviewFile(
                         `/submissions/${submissionId}/file`,
-                        submission.data?.original_filename ?? "submission.pdf",
+                        submission.data?.original_filename ?? "submission",
                         false
                       )
                     }
                   >
                     Download File
                   </Button>
+                </div>
+              </div>
+            ) : null}
+
+            {/* Notebook Execution Audit */}
+            {manifest.data?.execution_audit && (
+              <div className="mt-5 rounded-md border border-line p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted">
+                    Jupyter Notebook Execution Audit
+                  </h4>
+                  <Badge tone={getExecutionTone(manifest.data.execution_audit.execution_status)}>
+                    {manifest.data.execution_audit.execution_status}
+                  </Badge>
+                </div>
+
+                <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+                  <div className="rounded border border-line/60 bg-stone-50/50 p-2.5">
+                    <span className="text-[11px] font-medium text-muted">Total Cells</span>
+                    <p className="text-base font-semibold text-ink">{manifest.data.execution_audit.total_cells}</p>
+                  </div>
+                  <div className="rounded border border-line/60 bg-stone-50/50 p-2.5">
+                    <span className="text-[11px] font-medium text-muted">Executed Code Cells</span>
+                    <p className="text-base font-semibold text-emerald-700">
+                      {manifest.data.execution_audit.executed_code_cells} / {manifest.data.execution_audit.code_cells}
+                    </p>
+                  </div>
+                  <div className="rounded border border-line/60 bg-stone-50/50 p-2.5">
+                    <span className="text-[11px] font-medium text-muted">Unexecuted Cells</span>
+                    <p className={`text-base font-semibold ${manifest.data.execution_audit.unexecuted_code_cells > 0 ? "text-amber-700" : "text-ink"}`}>
+                      {manifest.data.execution_audit.unexecuted_code_cells}
+                    </p>
+                  </div>
+                  <div className="rounded border border-line/60 bg-stone-50/50 p-2.5">
+                    <span className="text-[11px] font-medium text-muted">Cell Runtime Errors</span>
+                    <p className={`text-base font-semibold ${manifest.data.execution_audit.cells_with_errors > 0 ? "text-red-700" : "text-ink"}`}>
+                      {manifest.data.execution_audit.cells_with_errors}
+                    </p>
+                  </div>
+                </div>
+
+                {manifest.data.execution_audit.execution_order_anomaly && (
+                  <p className="mt-2.5 text-xs text-amber-700">
+                    ⚠️ Cell execution counts are non-linear or out of order. Saved output evidence may reflect an older or partial run.
+                  </p>
+                )}
+                {manifest.data.execution_audit.cells_with_errors > 0 && (
+                  <p className="mt-1 text-xs text-red-700">
+                    ⚠️ Runtime error traces were found in saved cell outputs and flagged to the AI evaluator.
+                  </p>
+                )}
+              </div>
+            )}
+
+            {/* Project Archive File Manifest */}
+            {manifest.data?.file_manifest?.files?.length ? (
+              <div className="mt-5">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
+                  <h4 className="text-xs font-semibold uppercase tracking-wider text-muted">
+                    Project Archive File Manifest ({manifest.data.file_manifest.total_files} files)
+                  </h4>
+                  <div className="flex gap-2 text-xs">
+                    <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${manifest.data.file_manifest.has_readme ? "bg-emerald-50 text-emerald-800" : "bg-stone-100 text-stone-600"}`}>
+                      README: {manifest.data.file_manifest.has_readme ? "✓" : "✗"}
+                    </span>
+                    <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${manifest.data.file_manifest.has_tests ? "bg-emerald-50 text-emerald-800" : "bg-stone-100 text-stone-600"}`}>
+                      Tests: {manifest.data.file_manifest.has_tests ? "✓" : "✗"}
+                    </span>
+                    <span className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${manifest.data.file_manifest.has_manifest ? "bg-emerald-50 text-emerald-800" : "bg-stone-100 text-stone-600"}`}>
+                      Manifest: {manifest.data.file_manifest.has_manifest ? "✓" : "✗"}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="max-h-72 overflow-y-auto rounded-md border border-line">
+                  <table className="w-full text-left text-xs">
+                    <thead className="sticky top-0 border-b border-line bg-stone-50 text-muted">
+                      <tr>
+                        <th className="px-3 py-2 font-medium">Path</th>
+                        <th className="px-3 py-2 font-medium">Category</th>
+                        <th className="px-3 py-2 font-medium">Size</th>
+                        <th className="px-3 py-2 font-medium text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-line bg-white">
+                      {manifest.data.file_manifest.files.map((file) => (
+                        <tr key={file.rel_path} className="hover:bg-stone-50/50">
+                          <td className="px-3 py-2 font-mono text-[11px] text-ink">{file.rel_path}</td>
+                          <td className="px-3 py-2">
+                            <span className="rounded bg-stone-100 px-1.5 py-0.5 text-[10px] font-medium text-ink">
+                              {file.category}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-muted">{(file.size / 1024).toFixed(1)} KB</td>
+                          <td className="px-3 py-2 text-right">
+                            <div className="flex justify-end gap-1">
+                              <button
+                                type="button"
+                                className="cursor-pointer rounded px-2 py-0.5 text-[11px] font-medium text-ink hover:bg-stone-100"
+                                onClick={() =>
+                                  downloadOrPreviewFile(
+                                    `/submissions/${submissionId}/file`,
+                                    file.rel_path.split("/").pop() || "file",
+                                    true,
+                                    { subpath: file.rel_path }
+                                  )
+                                }
+                              >
+                                Preview
+                              </button>
+                              <button
+                                type="button"
+                                className="cursor-pointer rounded px-2 py-0.5 text-[11px] font-medium text-muted hover:text-ink"
+                                onClick={() =>
+                                  downloadOrPreviewFile(
+                                    `/submissions/${submissionId}/file`,
+                                    file.rel_path.split("/").pop() || "file",
+                                    false,
+                                    { subpath: file.rel_path }
+                                  )
+                                }
+                              >
+                                Download
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             ) : null}
