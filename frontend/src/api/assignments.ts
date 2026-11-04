@@ -51,5 +51,36 @@ export const assignmentsApi = {
       })
     ).data,
   submissions: async (assignmentId: number) =>
-    (await apiClient.get<Submission[]>(`/assignments/${assignmentId}/submissions`)).data
+    (await apiClient.get<Submission[]>(`/assignments/${assignmentId}/submissions`)).data,
+
+  extractRubricFromFile: async (file: File, maxMarks?: number) => {
+    const form = new FormData();
+    form.append("file", file);
+    if (maxMarks) form.append("max_marks", String(maxMarks));
+    return (
+      await apiClient.post<import("../types/api").ExtractedRubricResponse>(
+        "/assignments/extract-rubric-from-file",
+        form,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      )
+    ).data;
+  },
+
+  uploadFile: async (assignmentId: number, file: File) => {
+    const form = new FormData();
+    form.append("file", file);
+    return (
+      await apiClient.post<import("../types/api").AssignmentFile>(
+        `/assignments/${assignmentId}/files`,
+        form,
+        { headers: { "Content-Type": "multipart/form-data" } }
+      )
+    ).data;
+  },
+
+  listFiles: async (assignmentId: number) =>
+    (await apiClient.get<import("../types/api").AssignmentFile[]>(`/assignments/${assignmentId}/files`)).data,
+
+  deleteFile: async (assignmentId: number, fileId: number) =>
+    apiClient.delete(`/assignments/${assignmentId}/files/${fileId}`),
 };

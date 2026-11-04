@@ -41,11 +41,12 @@ def get_submission(
 
 @router.get(
     "/{submission_id}/file",
-    summary="Download or preview submitted file (Student owner or Assignment faculty only)",
+    summary="Download or preview submitted file or archive subfile (Student owner or Assignment faculty only)",
 )
 def get_submission_file(
     submission_id: int,
     inline: bool = False,
+    subpath: str | None = None,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
@@ -54,6 +55,39 @@ def get_submission_file(
         submission_id=submission_id,
         current_user=current_user,
         inline=inline,
+        subpath=subpath,
+    )
+
+
+@router.get(
+    "/{submission_id}/manifest",
+    summary="Get submission file manifest and execution audit (Student owner or Assignment faculty only)",
+)
+def get_submission_manifest(
+    submission_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    return submission_service.get_submission_manifest(
+        db=db,
+        submission_id=submission_id,
+        current_user=current_user,
+    )
+
+
+@router.get(
+    "/{submission_id}/evidence-report",
+    summary="Get detailed assessment evidence diagnostic report (Student owner or Assignment faculty only)",
+)
+def get_submission_evidence_report(
+    submission_id: int,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict:
+    return submission_service.get_submission_evidence_report(
+        db=db,
+        submission_id=submission_id,
+        current_user=current_user,
     )
 
 

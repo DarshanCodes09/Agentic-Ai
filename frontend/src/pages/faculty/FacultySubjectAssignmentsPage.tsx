@@ -1,7 +1,8 @@
-import { FormEvent, useState } from "react";
+import { ChangeEvent, FormEvent, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { assignmentsApi } from "../../api/assignments";
 import { getApiErrorMessage } from "../../api/client";
+import { downloadOrPreviewFile } from "../../api/files";
 import { subjectsApi } from "../../api/subjects";
 import { PageHeader } from "../../components/common/PageHeader";
 import { Badge } from "../../components/ui/Badge";
@@ -13,7 +14,15 @@ import { EmptyState, ErrorState, LoadingState } from "../../components/ui/State"
 import { Table } from "../../components/ui/Table";
 import { useAsync } from "../../hooks/useAsync";
 import { formatDate } from "../../utils/format";
-import type { Assignment } from "../../types/api";
+import type { Assignment, AssignmentFile, ExtractedRubricResponse } from "../../types/api";
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+}
 
 interface CriterionFormItem {
   criterion: string;
@@ -34,6 +43,15 @@ export function FacultySubjectAssignmentsPage() {
     max_marks: 100,
   });
 
+  // Assignment files state
+  const [attachedFiles, setAttachedFiles] = useState<File[]>([]);
+  const [fileValidationError, setFileValidationError] = useState("");
+  const [extractingFileIdx, setExtractingFileIdx] = useState<number | null>(null);
+  const [conflictWarning, setConflictWarning] = useState<string | null>(null);
+  const [extractionInfo, setExtractionInfo] = useState<string | null>(null);
+  const [extractedDraft, setExtractedDraft] = useState<ExtractedRubricResponse | null>(null);
+  const [hasManualRubricTouched, setHasManualRubricTouched] = useState(false);
+
   const [hasRubric, setHasRubric] = useState(true);
   const [rubricName, setRubricName] = useState("");
   const [rubricDescription, setRubricDescription] = useState("");
@@ -51,6 +69,7 @@ export function FacultySubjectAssignmentsPage() {
   ]);
 
   const [selectedAssignmentForRubric, setSelectedAssignmentForRubric] = useState<Assignment | null>(null);
+  const [selectedAssignmentForFiles, setSelectedAssignmentForFiles] = useState<Assignment | null>(null);
   const [error, setError] = useState("");
 
   // Edit assignment state
@@ -159,7 +178,120 @@ export function FacultySubjectAssignmentsPage() {
     0
   );
 
+  const ALLOWED_EXTS = [".pdf", ".docx", ".doc", ".txt", ".md"];
+  const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20 MB
+
+  function handleFileSelect(e: ChangeEvent<HTMLInputElement>) {
+    setFileValidationError("");
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    const newFiles: File[] = [];
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i];
+      const ext = "." + f.name.split(".").pop()?.toLowerCase();
+      if (!ALLOWED_EXTS.includes(ext)) {
+        setFileValidationError(`File "${f.name}" has an unsupported format. Supported formats: PDF, DOCX, TXT, MD.`);
+        continue;
+      }
+      if (f.size > MAX_FILE_SIZE) {
+        setFileValidationError(`File "${f.name}" exceeds the 20 MB size limit.`);
+        continue;
+      }
+      newFiles.push(f);
+    }
+    if (newFiles.length > 0) {
+      setAttachedFiles((prev) => [...prev, ...newFiles]);
+    }
+    e.target.value = "";
+  }
+
+  function removeAttachedFile(index: number) {
+    setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
+    if (extractingFileIdx === index) {
+      setExtractingFileIdx(null);
+    }
+  }
+
+  function previewLocalFile(file: File) {
+    const url = URL.createObjectURL(file);
+    window.open(url, "_blank");
+  }
+
+  async function extractRubricFromFile(file: File, idx: number) {
+    setExtractingFileIdx(idx);
+    setConflictWarning(null);
+    setExtractionInfo(null);
+    setExtractedDraft(null);
+
+    try {
+      const result = await assignmentsApi.extractRubricFromFile(file, form.max_marks);
+      setExtractedDraft(result);
+
+      if (result.has_rubric && result.items && result.items.length > 0) {
+        // Case B: Faculty already customized manual rubric
+        if (hasManualRubricTouched) {
+          const extractedSum = result.total_marks ?? result.items.reduce((s, i) => s + i.max_marks, 0);
+          if (Math.abs(extractedSum - totalCriteriaMarks) > 0.01) {
+            setConflictWarning(
+              `The extracted document marking distribution (Total: ${extractedSum} marks, ${result.items.length} criteria) conflicts with your manual rubric (Total: ${totalCriteriaMarks} marks). Your manual rubric remains authoritative unless you choose to replace it.`
+            );
+          } else {
+            setConflictWarning(
+              `Document rubric extracted (${result.items.length} criteria totaling ${extractedSum} marks). You have existing manual criteria. Choose whether to replace your manual rubric or keep it.`
+            );
+          }
+        } else {
+          // Case A: Faculty has not entered a manual rubric -> populate draft
+          setHasRubric(true);
+          if (result.rubric_name) setRubricName(result.rubric_name);
+          setCriteria(
+            result.items.map((i) => ({
+              criterion: i.criterion,
+              description: i.description || "",
+              max_marks: i.max_marks,
+            }))
+          );
+          if (result.assignment_summary && !form.description) {
+            setForm((prev) => ({ ...prev, description: result.assignment_summary || prev.description }));
+          }
+          setExtractionInfo(
+            `Extracted rubric draft populated (${result.items.length} criteria totaling ${result.total_marks} marks) from "${file.name}". Please review, edit, and approve criteria below before saving.`
+          );
+        }
+      } else {
+        // Case C: No explicit rubric in document
+        setExtractionInfo(
+          `No explicit grading rubric was found in "${file.name}". The document will still be attached to provide assignment instructions and requirements for AI evaluation. Please continue using the manual rubric builder.`
+        );
+      }
+    } catch (err) {
+      setFileValidationError(getApiErrorMessage(err));
+    } finally {
+      setExtractingFileIdx(null);
+    }
+  }
+
+  function applyExtractedDraft() {
+    if (!extractedDraft || !extractedDraft.items) return;
+    setHasRubric(true);
+    if (extractedDraft.rubric_name) setRubricName(extractedDraft.rubric_name);
+    setCriteria(
+      extractedDraft.items.map((i) => ({
+        criterion: i.criterion,
+        description: i.description || "",
+        max_marks: i.max_marks,
+      }))
+    );
+    setConflictWarning(null);
+    setExtractionInfo(
+      `Replaced manual rubric with extracted criteria (${extractedDraft.items.length} criteria totaling ${extractedDraft.total_marks} marks). Please review before saving.`
+    );
+    setHasManualRubricTouched(true);
+  }
+
   function addCriterion() {
+    setHasManualRubricTouched(true);
     setCriteria([
       ...criteria,
       { criterion: "", description: "", max_marks: 10 },
@@ -167,10 +299,12 @@ export function FacultySubjectAssignmentsPage() {
   }
 
   function removeCriterion(index: number) {
+    setHasManualRubricTouched(true);
     setCriteria(criteria.filter((_, i) => i !== index));
   }
 
   function updateCriterion(index: number, key: keyof CriterionFormItem, value: string | number) {
+    setHasManualRubricTouched(true);
     setCriteria(
       criteria.map((item, i) => (i === index ? { ...item, [key]: value } : item))
     );
@@ -216,7 +350,7 @@ export function FacultySubjectAssignmentsPage() {
     }
 
     try {
-      await assignmentsApi.create(subjectId, {
+      const newAsg = await assignmentsApi.create(subjectId, {
         ...form,
         due_date: new Date(form.due_date).toISOString(),
         rubric: hasRubric
@@ -232,7 +366,24 @@ export function FacultySubjectAssignmentsPage() {
           : undefined,
       });
 
+      // Upload attached files if any
+      if (attachedFiles.length > 0) {
+        for (const file of attachedFiles) {
+          try {
+            await assignmentsApi.uploadFile(newAsg.id, file);
+          } catch (uploadErr) {
+            console.error("Failed to upload assignment file:", uploadErr);
+          }
+        }
+      }
+
       setForm({ title: "", description: "", instructions: "", due_date: "", max_marks: 100 });
+      setAttachedFiles([]);
+      setFileValidationError("");
+      setConflictWarning(null);
+      setExtractionInfo(null);
+      setExtractedDraft(null);
+      setHasManualRubricTouched(false);
       setRubricName("");
       setRubricDescription("");
       setCriteria([
@@ -311,6 +462,125 @@ export function FacultySubjectAssignmentsPage() {
                 onChange={(e) => setForm({ ...form, instructions: e.target.value })}
               />
             </Field>
+
+            {/* Assignment Files (Optional) */}
+            <div className="mt-6 rounded-lg border border-line bg-stone-50/70 p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-ink">Assignment Files (Optional)</h3>
+                  <p className="text-xs text-muted">
+                    Upload one or more assignment instruction files: PDF, DOCX, TXT, or Markdown (Max 20 MB).
+                  </p>
+                </div>
+                <label className="cursor-pointer rounded border border-line bg-white px-3 py-1.5 text-xs font-medium text-ink shadow-sm transition hover:bg-stone-50">
+                  <span>+ Choose Files</span>
+                  <input
+                    type="file"
+                    multiple
+                    accept=".pdf,.docx,.doc,.txt,.md"
+                    className="hidden"
+                    onChange={handleFileSelect}
+                  />
+                </label>
+              </div>
+
+              {fileValidationError ? (
+                <p className="mt-2 text-xs font-medium text-red-600">{fileValidationError}</p>
+              ) : null}
+
+              {attachedFiles.length > 0 ? (
+                <div className="mt-3 space-y-2">
+                  {attachedFiles.map((f, idx) => (
+                    <div
+                      key={idx}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line bg-white p-2.5 text-xs shadow-sm"
+                    >
+                      <div className="flex items-center gap-2 overflow-hidden">
+                        <span className="rounded bg-stone-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase text-ink">
+                          {f.name.split(".").pop() || "FILE"}
+                        </span>
+                        <span className="truncate font-medium text-ink" title={f.name}>
+                          {f.name}
+                        </span>
+                        <span className="text-muted">({formatBytes(f.size)})</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => previewLocalFile(f)}
+                          className="cursor-pointer rounded border border-line px-2 py-1 text-xs text-ink hover:bg-stone-50"
+                        >
+                          Preview
+                        </button>
+                        <button
+                          type="button"
+                          disabled={extractingFileIdx === idx}
+                          onClick={() => extractRubricFromFile(f, idx)}
+                          className="cursor-pointer rounded border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                          title="Extract grading criteria and mark distribution from this document"
+                        >
+                          {extractingFileIdx === idx ? "Extracting..." : "⚡ Extract Rubric from File"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeAttachedFile(idx)}
+                          className="rounded p-1 text-xs text-muted hover:bg-red-50 hover:text-red-700"
+                          title="Remove file"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <p className="mt-2 text-xs italic text-muted">
+                  No files selected. Faculty can attach instruction files, specifications, or rubric documents.
+                </p>
+              )}
+
+              {/* Conflict Warning Banner (Case B) */}
+              {conflictWarning ? (
+                <div className="mt-3 rounded-md border border-amber-300 bg-amber-50 p-3 text-xs text-amber-900">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <p className="font-semibold">⚠️ Marking Distribution Conflict</p>
+                      <p className="mt-0.5">{conflictWarning}</p>
+                    </div>
+                    <div className="flex shrink-0 gap-1.5 pt-1 sm:pt-0">
+                      <button
+                        type="button"
+                        onClick={applyExtractedDraft}
+                        className="rounded bg-amber-700 px-2.5 py-1 font-medium text-white hover:bg-amber-800"
+                      >
+                        Replace with Extracted Rubric
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConflictWarning(null)}
+                        className="rounded border border-amber-400 bg-white px-2.5 py-1 font-medium text-amber-900 hover:bg-amber-100"
+                      >
+                        Keep Manual Rubric
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {/* Extraction Info Banner (Case A / C) */}
+              {extractionInfo ? (
+                <div className="mt-3 flex items-center justify-between rounded-md border border-sky-200 bg-sky-50 p-2.5 text-xs text-sky-900">
+                  <p>{extractionInfo}</p>
+                  <button
+                    type="button"
+                    onClick={() => setExtractionInfo(null)}
+                    className="ml-2 text-xs font-semibold text-sky-700 hover:text-sky-900"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ) : null}
+            </div>
 
             {/* Rubric Section */}
             <div className="mt-6 rounded-lg border border-line bg-stone-50/70 p-4">
@@ -443,12 +713,24 @@ export function FacultySubjectAssignmentsPage() {
                 <LoadingState />
               ) : assignments.data?.length ? (
                 <Table
-                  columns={["Title", "Marks", "Status", "Rubric", "Submissions", "Actions"]}
+                  columns={["Title", "Files", "Marks", "Status", "Rubric", "Submissions", "Actions"]}
                   rows={assignments.data.map((item) => [
                     <div>
                       <p className="font-medium text-ink">{item.title}</p>
                       <p className="text-xs text-muted">Due: {formatDate(item.due_date)}</p>
                     </div>,
+                    item.files?.length ? (
+                      <button
+                        type="button"
+                        onClick={() => setSelectedAssignmentForFiles(item)}
+                        className="cursor-pointer transition hover:opacity-80"
+                        title="Click to view attached files"
+                      >
+                        <Badge tone="neutral">📎 {item.files.length} file{item.files.length > 1 ? "s" : ""}</Badge>
+                      </button>
+                    ) : (
+                      <span className="text-xs text-muted">—</span>
+                    ),
                     item.max_marks,
                     item.is_archived ? (
                       <Badge tone="neutral">Archived</Badge>
@@ -692,6 +974,65 @@ export function FacultySubjectAssignmentsPage() {
                 : "Confirm Unarchive"}
             </Button>
           </div>
+        </div>
+      </Modal>
+
+      {/* Attached Files Modal */}
+      <Modal
+        isOpen={!!selectedAssignmentForFiles}
+        onClose={() => setSelectedAssignmentForFiles(null)}
+        title={`${selectedAssignmentForFiles?.title ?? "Assignment"} — Attached Files`}
+        description="Instruction, specification, and rubric documents attached by faculty."
+      >
+        <div className="space-y-3">
+          {selectedAssignmentForFiles?.files?.length ? (
+            selectedAssignmentForFiles.files.map((af) => (
+              <div
+                key={af.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line bg-stone-50/50 p-3 text-xs"
+              >
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <span className="rounded bg-stone-200 px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase text-ink">
+                    {af.file_type}
+                  </span>
+                  <span className="truncate font-medium text-ink" title={af.original_filename}>
+                    {af.original_filename}
+                  </span>
+                  <span className="text-muted">({formatBytes(af.file_size)})</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      downloadOrPreviewFile(
+                        `/assignments/${selectedAssignmentForFiles.id}/files/${af.id}/file`,
+                        af.original_filename,
+                        true
+                      )
+                    }
+                    className="cursor-pointer rounded border border-line bg-white px-2.5 py-1 text-xs font-medium text-ink hover:bg-stone-100"
+                  >
+                    Preview
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      downloadOrPreviewFile(
+                        `/assignments/${selectedAssignmentForFiles.id}/files/${af.id}/download`,
+                        af.original_filename,
+                        false
+                      )
+                    }
+                    className="cursor-pointer rounded bg-ink px-2.5 py-1 text-xs font-medium text-white hover:bg-ink/90"
+                  >
+                    Download
+                  </button>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="text-xs italic text-muted">No files attached to this assignment.</p>
+          )}
         </div>
       </Modal>
     </>

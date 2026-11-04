@@ -53,3 +53,17 @@ class BaseLLMProvider(ABC):
             Instance of response_model.
         """
         pass
+
+    @property
+    def has_vision_capability(self) -> bool:
+        """Indicates whether this provider supports visual/image understanding."""
+        return False
+
+    async def analyze_image(
+        self,
+        image_path: str,
+        prompt: str = "Analyze this academic plot, chart, or diagram and describe its axes, metrics, trends, and results.",
+        **kwargs: Any,
+    ) -> str | None:
+        """Analyze an image using a vision-capable model if supported."""
+        return None

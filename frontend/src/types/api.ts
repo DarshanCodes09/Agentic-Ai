@@ -49,6 +49,34 @@ export interface Enrollment {
   student?: UserBrief | null;
 }
 
+export interface AssignmentFile {
+  id: number;
+  assignment_id: number;
+  uploaded_by: number;
+  original_filename: string;
+  stored_filename: string;
+  file_type: string;
+  file_size: number;
+  created_at: string;
+}
+
+export interface ExtractedRubricItem {
+  criterion: string;
+  description?: string | null;
+  max_marks: number;
+}
+
+export interface ExtractedRubricResponse {
+  has_rubric: boolean;
+  rubric_name?: string | null;
+  total_marks?: number | null;
+  items: ExtractedRubricItem[];
+  assignment_summary?: string | null;
+  requirements_summary?: string | null;
+  message?: string | null;
+  extracted_text_preview?: string | null;
+}
+
 export interface Assignment {
   id: number;
   subject_id: number;
@@ -62,6 +90,7 @@ export interface Assignment {
   created_at: string;
   updated_at: string;
   rubric?: Rubric | null;
+  files?: AssignmentFile[];
 }
 
 

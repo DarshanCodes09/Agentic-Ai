@@ -41,6 +41,28 @@ class MockLLMProvider(BaseLLMProvider):
     Does not require external network requests or API keys.
     """
 
+    def __init__(self, enable_vision: bool = False) -> None:
+        self.enable_vision = enable_vision
+
+    @property
+    def has_vision_capability(self) -> bool:
+        return self.enable_vision
+
+    async def analyze_image(
+        self,
+        image_path: str,
+        prompt: str = "Analyze this academic plot, chart, or diagram and describe its axes, metrics, trends, and results.",
+        **kwargs: Any,
+    ) -> str | None:
+        if not self.enable_vision:
+            return None
+        from pathlib import Path
+        name = Path(image_path).name
+        return (
+            f"Vision inspection of '{name}': Visual analysis indicates experimental results plot. "
+            f"Training and validation metrics show steady convergence over epochs, confirming model optimization."
+        )
+
     async def generate(
         self,
         prompt: str,
@@ -60,10 +82,22 @@ class MockLLMProvider(BaseLLMProvider):
         system_prompt: str | None = None,
         **kwargs: Any,
     ) -> T:
+        if "[SIMULATE_413]" in prompt or "[SIMULATE_GROQ_413]" in prompt:
+            raise AppException(
+                detail="AI provider rejected request: Payload too large for model mock (HTTP 413: Request too large on tokens per minute (TPM)). Please reduce submission file size.",
+                status_code=413,
+            )
+        if "[SIMULATE_CONTEXT_LENGTH]" in prompt:
+            raise AppException(
+                detail="AI model context-length exceeded for model mock (HTTP 413: context_length_exceeded: maximum context length is 8192 tokens). Please reduce submission file size.",
+                status_code=413,
+            )
         if response_model == AssessmentStructuredOutput:
             return self._generate_mock_assessment(prompt)  # type: ignore[return-value]
         elif response_model == FeedbackStructuredOutput:
             return self._generate_mock_feedback(prompt)  # type: ignore[return-value]
+        elif response_model.__name__ == "ExtractedRubricResponse":
+            return self._generate_mock_extracted_rubric(prompt)  # type: ignore[return-value]
         else:
             # Fallback for arbitrary Pydantic schema
             try:
@@ -73,6 +107,89 @@ class MockLLMProvider(BaseLLMProvider):
                     detail=f"MockLLMProvider does not support schema {response_model.__name__}",
                     status_code=500,
                 )
+
+    def _generate_mock_extracted_rubric(self, prompt: str) -> Any:
+        """Heuristically analyze document text in prompt to extract rubric criteria or detect lack of rubric."""
+        from app.schemas.rubric import ExtractedRubricItem, ExtractedRubricResponse
+
+        if "[SIMULATE_NO_RUBRIC]" in prompt:
+            return ExtractedRubricResponse(
+                has_rubric=False,
+                rubric_name=None,
+                total_marks=None,
+                items=[],
+                message="No explicit grading rubric was found in the document.",
+            )
+
+        lower = prompt.lower()
+        rubric_keywords = ["rubric", "grading scheme", "marking scheme", "evaluation criteria", "marks:", "points:"]
+        has_keywords = any(kw in lower for kw in rubric_keywords)
+
+        if not has_keywords:
+            return ExtractedRubricResponse(
+                has_rubric=False,
+                rubric_name=None,
+                total_marks=None,
+                items=[],
+                message="No explicit grading rubric was found in the document. You can define rubric criteria manually.",
+            )
+
+        if "[SIMULATE_MISMATCH]" in prompt:
+            return ExtractedRubricResponse(
+                has_rubric=True,
+                rubric_name="Extracted Marking Scheme",
+                total_marks=120.0,
+                items=[
+                    ExtractedRubricItem(criterion="Part A: Design", description="System architecture", max_marks=70.0),
+                    ExtractedRubricItem(criterion="Part B: Implementation", description="Core algorithms", max_marks=50.0),
+                ],
+                message="Extracted rubric contains 120.0 marks.",
+            )
+
+        pattern = re.compile(
+            r"(?:[-*•]|\d+\.|\bCriterion:?)\s*([A-Za-z0-9\s&,/-]+?)\s*[-:]?\s*\(?(\d+(?:\.\d+)?)\s*(?:marks?|pts?|points?)\)?",
+            re.IGNORECASE,
+        )
+        matches = pattern.findall(prompt)
+
+        items: list[ExtractedRubricItem] = []
+        seen = set()
+        for name, marks_str in matches:
+            clean_name = name.strip()
+            if len(clean_name) < 3 or clean_name.lower() in seen:
+                continue
+            seen.add(clean_name.lower())
+            items.append(
+                ExtractedRubricItem(
+                    criterion=clean_name,
+                    description=f"Assessment of {clean_name} deliverables and implementation",
+                    max_marks=float(marks_str),
+                )
+            )
+
+        if not items:
+            items = [
+                ExtractedRubricItem(
+                    criterion="Technical Implementation & Functionality",
+                    description="Correctness of algorithms and problem requirements",
+                    max_marks=60.0,
+                ),
+                ExtractedRubricItem(
+                    criterion="Experimental Evaluation & Discussion",
+                    description="Methodology, results analysis, and documentation",
+                    max_marks=40.0,
+                ),
+            ]
+
+        total = sum(item.max_marks for item in items)
+        return ExtractedRubricResponse(
+            has_rubric=True,
+            rubric_name="Extracted Assignment Rubric",
+            total_marks=total,
+            items=items,
+            assignment_summary="Extracted from assignment instruction document.",
+            message=f"Successfully extracted {len(items)} criteria totaling {total} marks.",
+        )
 
     def _generate_mock_assessment(self, prompt: str) -> AssessmentStructuredOutput:
         """Heuristically analyze prompt to provide realistic academic evaluation."""
@@ -86,7 +203,8 @@ class MockLLMProvider(BaseLLMProvider):
             or "IDK" in prompt
             or "[EMPTY SUBMISSION]" in prompt
         )
-
+        is_unexecuted_notebook = "Execution Audit: UNEXECUTED" in prompt
+        is_errored_notebook = "Execution Audit: ERRORED" in prompt
 
         # Extract criteria if mentioned in prompt
         # Rubric format in prompt: Criterion: <name> (Max Marks: <N>)
@@ -95,16 +213,41 @@ class MockLLMProvider(BaseLLMProvider):
             prompt,
         )
 
+        # Detect files and mappings from prompt
+        discovered_files = re.findall(r"\[(?:Source File|CSV Data/Results|Notebook|Document Report|Visual Inspection):\s*([^\]\n]+)\]", prompt)
+        clean_files = [f.split("(")[0].strip() for f in discovered_files if f.strip()]
+        
+        criterion_mapping_matches = re.findall(r"\*\s*Criterion '([^']+)':\s*Substantive Evidence in \[([^\]]+)\]", prompt)
+        criterion_to_files = {c.strip().lower(): [f.strip() for f in fl.split(",")] for c, fl in criterion_mapping_matches}
+
+        review_crit_matches = re.findall(r"\*\s*Criterion '([^']+)':\s*(.+)", prompt)
+        review_crits = {c.strip().lower(): r.strip() for c, r in review_crit_matches}
+
         criteria_evaluations: list[CriterionEvaluation] = []
         if criteria_matches:
             for criterion_name, max_m_str in criteria_matches:
                 crit_max = float(max_m_str)
-                score = 0.0 if is_sparse else round(crit_max * 0.85, 2)
-                reasoning = (
-                    f"Limited or absent explanation provided for '{criterion_name}'."
-                    if is_sparse
-                    else f"Clear and accurate articulation adhering to '{criterion_name}' standards."
-                )
+                crit_lower = criterion_name.strip().lower()
+                matched_files = criterion_to_files.get(crit_lower, [])
+                ref_file = matched_files[0] if matched_files and not matched_files[0].startswith("(") else (clean_files[0] if clean_files else "submitted project files")
+
+                # Check if criterion requires review due to unreadable / omitted files
+                if crit_lower in review_crits and any(kw in review_crits[crit_lower].lower() for kw in ("unreadable", "omitted", "could not be parsed", "unsupported")):
+                    score = round(crit_max * 0.55, 2)
+                    reasoning = f"Work for '{criterion_name}' in {ref_file} cannot be fully verified due to file format or context limits ({review_crits[crit_lower]}); provisional partial credit awarded, flagged for faculty review."
+                elif is_sparse or (matched_files and "(no directly matched files" in matched_files[0].lower() and not clean_files):
+                    score = 0.0
+                    reasoning = f"Work absent after adequate inspection across project files for '{criterion_name}'."
+                elif is_unexecuted_notebook:
+                    score = round(crit_max * 0.55, 2)
+                    reasoning = f"Code implementation is present in {ref_file} for '{criterion_name}', but notebook cells lack saved execution outputs and execution counts."
+                elif is_errored_notebook:
+                    score = round(crit_max * 0.50, 2)
+                    reasoning = f"Code implementation was attempted in {ref_file} for '{criterion_name}', but execution halted with runtime errors."
+                else:
+                    score = round(crit_max * 0.88, 2)
+                    reasoning = f"Verified implementation and experimental outcomes in {ref_file}; methodology and deliverables adhere to '{criterion_name}' standards."
+
                 criteria_evaluations.append(
                     CriterionEvaluation(
                         rubric_item_id=None,
@@ -116,14 +259,22 @@ class MockLLMProvider(BaseLLMProvider):
                 )
             calculated_score = sum(c.score for c in criteria_evaluations)
         else:
-            calculated_score = 0.0 if is_sparse else round(total_max_marks * 0.82, 2)
+            if is_sparse:
+                calculated_score = 0.0
+            elif is_unexecuted_notebook:
+                calculated_score = round(total_max_marks * 0.55, 2)
+            elif is_errored_notebook:
+                calculated_score = round(total_max_marks * 0.50, 2)
+            else:
+                calculated_score = round(total_max_marks * 0.82, 2)
+
             criteria_evaluations.append(
                 CriterionEvaluation(
                     rubric_item_id=None,
                     criterion="Overall Academic Rigor & Accuracy",
                     score=calculated_score,
                     max_marks=total_max_marks,
-                    reasoning="Evaluation based on comprehensive conceptual correctness and structure.",
+                    reasoning="Evaluation based on comprehensive conceptual correctness, code implementation, and structure.",
                 )
             )
 
@@ -419,6 +570,53 @@ class GroqLLMProvider(BaseLLMProvider):
         self.timeout = timeout
         self.client = client or AsyncGroq(api_key=api_key, timeout=timeout)
 
+    @property
+    def has_vision_capability(self) -> bool:
+        """Determines whether current Groq model supports visual/image understanding."""
+        return "vision" in self.model.lower()
+
+    async def analyze_image(
+        self,
+        image_path: str,
+        prompt: str = "Analyze this academic plot, chart, or diagram and describe its axes, metrics, trends, and results.",
+        **kwargs: Any,
+    ) -> str | None:
+        if not self.has_vision_capability:
+            return None
+        import base64
+        from pathlib import Path
+        img_p = Path(image_path)
+        if not img_p.exists():
+            return None
+        ext = img_p.suffix.lower()
+        mime = "image/png"
+        if ext in [".jpg", ".jpeg"]:
+            mime = "image/jpeg"
+        elif ext == ".webp":
+            mime = "image/webp"
+
+        try:
+            b64_data = base64.b64encode(img_p.read_bytes()).decode("utf-8")
+            data_url = f"data:{mime};base64,{b64_data}"
+            resp = await self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {
+                        "role": "user",
+                        "content": [
+                            {"type": "text", "text": prompt},
+                            {"type": "image_url", "image_url": {"url": data_url}},
+                        ],
+                    }
+                ],
+                temperature=0.2,
+                max_tokens=400,
+            )
+            return resp.choices[0].message.content or ""
+        except Exception as exc:
+            logger.warning("Groq vision analysis failed for %s: %s", image_path, exc)
+            return None
+
     async def generate(
         self,
         prompt: str,
@@ -462,15 +660,31 @@ class GroqLLMProvider(BaseLLMProvider):
                 status_code=502,
             ) from e
         except BadRequestError as e:
-            logger.error("Groq bad request error: %s", getattr(e, "message", str(e)))
+            err_msg = str(getattr(e, "message", e)).lower()
+            provider_msg = getattr(e, "message", str(e))
+            if any(term in err_msg for term in ("413", "context_length_exceeded", "too large", "tokens", "maximum context")):
+                logger.error("Failure Stage: Model Context-Length Exceeded (BadRequestError). Provider message: %s", provider_msg)
+                raise AppException(
+                    detail=f"AI model context-length exceeded for {self.model} (HTTP 413: {provider_msg}). Please reduce submission file size.",
+                    status_code=413,
+                ) from e
+            logger.error("Groq bad request error: %s", provider_msg)
             raise AppException(
                 detail="Groq API bad request error.",
                 status_code=502,
             ) from e
         except APIStatusError as e:
-            logger.error("Groq API status error: status_code=%s", getattr(e, "status_code", "unknown"))
+            status_code = getattr(e, "status_code", 502)
+            provider_msg = getattr(e, "message", str(e))
+            if status_code == 413:
+                logger.error("Failure Stage: Groq Provider HTTP 413. Provider message: %s", provider_msg)
+                raise AppException(
+                    detail=f"AI provider rejected request: Payload too large for model {self.model} (HTTP 413: {provider_msg}). Please reduce submission file size.",
+                    status_code=413,
+                ) from e
+            logger.error("Groq API status error: status_code=%s, message=%s", status_code, provider_msg)
             raise AppException(
-                detail=f"Groq API error ({getattr(e, 'status_code', 502)}).",
+                detail=f"Groq API error ({status_code}).",
                 status_code=502,
             ) from e
         except GroqError as e:
@@ -530,15 +744,31 @@ class GroqLLMProvider(BaseLLMProvider):
                 status_code=502,
             ) from e
         except BadRequestError as e:
-            logger.error("Groq bad request error: %s", getattr(e, "message", str(e)))
+            err_msg = str(getattr(e, "message", e)).lower()
+            provider_msg = getattr(e, "message", str(e))
+            if any(term in err_msg for term in ("413", "context_length_exceeded", "too large", "tokens", "maximum context")):
+                logger.error("Failure Stage: Model Context-Length Exceeded (BadRequestError). Provider message: %s", provider_msg)
+                raise AppException(
+                    detail=f"AI model context-length exceeded for {self.model} (HTTP 413: {provider_msg}). Please reduce submission file size.",
+                    status_code=413,
+                ) from e
+            logger.error("Groq bad request error: %s", provider_msg)
             raise AppException(
                 detail="Groq API bad request error.",
                 status_code=502,
             ) from e
         except APIStatusError as e:
-            logger.error("Groq API status error: status_code=%s", getattr(e, "status_code", "unknown"))
+            status_code = getattr(e, "status_code", 502)
+            provider_msg = getattr(e, "message", str(e))
+            if status_code == 413:
+                logger.error("Failure Stage: Groq Provider HTTP 413. Provider message: %s", provider_msg)
+                raise AppException(
+                    detail=f"AI provider rejected request: Payload too large for model {self.model} (HTTP 413: {provider_msg}). Please reduce submission file size.",
+                    status_code=413,
+                ) from e
+            logger.error("Groq API status error: status_code=%s, message=%s", status_code, provider_msg)
             raise AppException(
-                detail=f"Groq API error ({getattr(e, 'status_code', 502)}).",
+                detail=f"Groq API error ({status_code}).",
                 status_code=502,
             ) from e
         except Exception as e:

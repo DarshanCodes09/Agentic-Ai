@@ -93,18 +93,34 @@ class NotEnrolledError(AppException):
 
 
 class InvalidFileTypeError(AppException):
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        detail: str = "Invalid file type. Supported formats: .ipynb, .py, .zip, .pdf, .docx, .txt, .md, .csv, and supported code/result files.",
+    ) -> None:
         super().__init__(
-            detail="Invalid file type. Only PDF and DOCX files are accepted.",
+            detail=detail,
             status_code=getattr(status, "HTTP_422_UNPROCESSABLE_CONTENT", 422),
         )
 
 
 class FileTooLargeError(AppException):
     def __init__(self, max_mb: int = 20) -> None:
+        status_code = getattr(status, "HTTP_413_CONTENT_TOO_LARGE", 413)
         super().__init__(
             detail=f"File exceeds the maximum allowed size of {max_mb} MB.",
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            status_code=status_code,
+        )
+
+
+class PayloadTooLargeError(AppException):
+    def __init__(
+        self,
+        detail: str = "The submission evaluation payload exceeds the maximum allowed request size (HTTP 413).",
+    ) -> None:
+        status_code = getattr(status, "HTTP_413_CONTENT_TOO_LARGE", 413)
+        super().__init__(
+            detail=detail,
+            status_code=status_code,
         )
 
 

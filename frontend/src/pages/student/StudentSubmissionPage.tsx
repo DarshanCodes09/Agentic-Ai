@@ -21,6 +21,7 @@ export function StudentSubmissionPage({ assessmentMode = false }: { assessmentMo
   if (assessmentMode) return <StudentAssessmentView submissionId={submissionId} />;
 
   const navigate = useNavigate();
+  const assignment = useAsync(() => (assignmentId ? assignmentsApi.get(assignmentId) : Promise.resolve(null)), [assignmentId]);
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState("");
@@ -50,6 +51,64 @@ export function StudentSubmissionPage({ assessmentMode = false }: { assessmentMo
         eyebrow="Student submission"
         description="Upload Jupyter notebooks (.ipynb), source code (.py, .java, .cpp, .ts), multi-file ZIP projects, or academic documents (.pdf, .docx, .md, .txt). Configured file limit: 25 MB."
       />
+
+      {assignment.data?.files && assignment.data.files.length > 0 ? (
+        <div className="mb-5 max-w-3xl rounded-lg border border-line bg-stone-50/70 p-4 shadow-soft">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-muted">
+              Assignment Reference & Instruction Files
+            </h3>
+            <span className="text-xs text-muted">{assignment.data.files.length} document(s)</span>
+          </div>
+          <div className="mt-3 space-y-2">
+            {assignment.data.files.map((af) => (
+              <div
+                key={af.id}
+                className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line bg-white p-2.5 text-xs shadow-sm"
+              >
+                <div className="flex items-center gap-2 overflow-hidden">
+                  <span className="rounded bg-stone-100 px-1.5 py-0.5 font-mono text-[10px] font-semibold uppercase text-ink">
+                    {af.file_type}
+                  </span>
+                  <span className="truncate font-medium text-ink" title={af.original_filename}>
+                    {af.original_filename}
+                  </span>
+                  <span className="text-muted">({(af.file_size / 1024).toFixed(1)} KB)</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      downloadOrPreviewFile(
+                        `/assignments/${assignmentId}/files/${af.id}/file`,
+                        af.original_filename,
+                        true
+                      )
+                    }
+                    className="cursor-pointer rounded border border-line bg-white px-2.5 py-1 text-xs font-medium text-ink hover:bg-stone-50"
+                  >
+                    Preview
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      downloadOrPreviewFile(
+                        `/assignments/${assignmentId}/files/${af.id}/download`,
+                        af.original_filename,
+                        false
+                      )
+                    }
+                    className="cursor-pointer rounded bg-ink px-2.5 py-1 text-xs font-medium text-white hover:bg-ink/90"
+                  >
+                    Download
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       <form onSubmit={onSubmit} className="max-w-3xl space-y-5 rounded-lg border border-line bg-white p-6 shadow-soft">
         <Field label="Submission text">
           <Textarea
